@@ -1,7 +1,7 @@
 import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../core/party_status.dart';
+import 'package:pathway/core/utils/party_status.dart';
 import '../../domain/entities/party_entities.dart';
 import '../../domain/usecases/party_usecases.dart';
 

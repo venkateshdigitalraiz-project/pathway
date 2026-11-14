@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:pathway/core/constants/api_endpoints.dart';
 import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/utils/api_logger.dart';
-import 'package:pathway/core/utils/carpool_distance_calculator.dart';
 
 import '../../domain/entities/carpool_entities.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
@@ -195,8 +194,7 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
     final requestHeaders = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null && token.isNotEmpty)
-        'Authorization': 'Bearer $token',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
 
     ApiLogger.logRequest(
@@ -282,8 +280,7 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
     final requestHeaders = <String, String>{
       'Content-Type': 'application/json',
       'Accept': 'application/json',
-      if (token != null && token.isNotEmpty)
-        'Authorization': 'Bearer $token',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
 
     ApiLogger.logRequest(
@@ -376,9 +373,7 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
       if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
     };
 
-    final bodyMap = <String, dynamic>{
-      'reason': 'Travel plans changed',
-    };
+    final bodyMap = <String, dynamic>{'reason': 'Travel plans changed'};
     final bodyJson = jsonEncode(bodyMap);
 
     ApiLogger.logRequest(
@@ -404,9 +399,7 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
       }
       request.add(utf8.encode(bodyJson));
 
-      var response = await request.close().timeout(
-        const Duration(seconds: 10),
-      );
+      var response = await request.close().timeout(const Duration(seconds: 10));
       var responseBody = await response.transform(utf8.decoder).join();
 
       ApiLogger.logResponse(
@@ -435,9 +428,7 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
           request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
         }
         request.add(utf8.encode(bodyJson));
-        response = await request.close().timeout(
-          const Duration(seconds: 10),
-        );
+        response = await request.close().timeout(const Duration(seconds: 10));
         responseBody = await response.transform(utf8.decoder).join();
 
         ApiLogger.logResponse(
@@ -461,11 +452,7 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
         throw Exception(msg);
       }
     } catch (e) {
-      ApiLogger.logError(
-        title: 'CANCEL_BOOKING',
-        url: targetUrl,
-        error: e,
-      );
+      ApiLogger.logError(title: 'CANCEL_BOOKING', url: targetUrl, error: e);
       rethrow;
     } finally {
       final i = _myRides.indexWhere((r) => r.id == rideId);

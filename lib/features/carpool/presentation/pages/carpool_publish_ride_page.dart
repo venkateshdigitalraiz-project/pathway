@@ -1,3 +1,5 @@
+// ignore_for_file: unused_element
+
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pathway/core/utils/carpool_distance_calculator.dart';
@@ -158,11 +160,7 @@ class _PublishRideViewState extends State<_PublishRideView> {
       ),
     );
     bloc.add(
-      CarpoolOfferToChanged(
-        to,
-        lat: destCoords.lat,
-        lng: destCoords.lng,
-      ),
+      CarpoolOfferToChanged(to, lat: destCoords.lat, lng: destCoords.lng),
     );
 
     bloc.add(

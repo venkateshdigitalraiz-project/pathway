@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../core/party_injector.dart';
+import 'package:pathway/core/party_injector.dart';
 import '../bloc/party_favorites_bloc.dart';
 import '../bloc/party_home_bloc.dart';
 import '../bloc/party_my_bookings_bloc.dart';

@@ -6,7 +6,6 @@ import '../../../auth/presentation/bloc/auth_event.dart';
 import '../bloc/carpool_nav_cubit.dart';
 import '../bloc/carpool_profile_bloc.dart';
 import 'carpool_settings_page.dart';
-import 'carpool_splash_page.dart';
 import 'carpool_wallet_page.dart';
 import 'search_booking_rider_page.dart';
 

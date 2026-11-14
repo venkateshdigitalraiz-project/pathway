@@ -75,44 +75,6 @@ class SearchBookingRiderRepositoryImpl implements SearchBookingRiderRepository {
     return [..._bookings]..sort((a, b) => b.departure.compareTo(a.departure));
   }
 
-  static String _extractCleanCity(String location) {
-    var raw = location.trim();
-    if (raw.isEmpty) return '';
-
-    if (raw.startsWith('{')) {
-      final cityMatch = RegExp(
-        r'(?:city|district)\s*[:=]\s*([^,}]+)',
-        caseSensitive: false,
-      ).firstMatch(raw);
-      if (cityMatch != null) {
-        return cityMatch.group(1)?.trim() ?? raw;
-      }
-      final addrMatch = RegExp(
-        r'(?:address|place|name)\s*[:=]\s*([^,}]+)',
-        caseSensitive: false,
-      ).firstMatch(raw);
-      if (addrMatch != null) {
-        raw = addrMatch.group(1)?.trim() ?? raw;
-      }
-    }
-
-    raw = raw.replaceAll(RegExp(r'''[{}"]'''), '').trim();
-    if (raw.contains(',')) {
-      final parts = raw
-          .split(',')
-          .map((p) => p.trim())
-          .where((p) => p.isNotEmpty)
-          .toList();
-      if (parts.length >= 2) {
-        final last = parts.last;
-        if (last.toLowerCase().contains('delhi')) return 'Delhi';
-        return last;
-      }
-    }
-    if (raw.toLowerCase().contains('delhi')) return 'Delhi';
-    return raw;
-  }
-
   @override
   Future<List<CarpoolRideEntity>> searchRides({
     required String from,

@@ -268,7 +268,8 @@ class _CarpoolMyRidesPageState extends State<CarpoolMyRidesPage> {
                           letterSpacing: -0.3,
                         ),
                       ),
-                      if (originInfo.city.isNotEmpty || destInfo.city.isNotEmpty) ...[
+                      if (originInfo.city.isNotEmpty ||
+                          destInfo.city.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
                           '${originInfo.city} to ${destInfo.city}',
@@ -305,16 +306,14 @@ class _CarpoolMyRidesPageState extends State<CarpoolMyRidesPage> {
             _detailRow(
               Icons.trip_origin_rounded,
               'Pickup Location',
-              originInfo.city.isNotEmpty &&
-                      originInfo.city != originInfo.place
+              originInfo.city.isNotEmpty && originInfo.city != originInfo.place
                   ? '${originInfo.place} (${originInfo.city})'
                   : originInfo.place,
             ),
             _detailRow(
               Icons.location_on_rounded,
               'Dropoff Location',
-              destInfo.city.isNotEmpty &&
-                      destInfo.city != destInfo.place
+              destInfo.city.isNotEmpty && destInfo.city != destInfo.place
                   ? '${destInfo.place} (${destInfo.city})'
                   : destInfo.place,
             ),
@@ -985,11 +984,8 @@ class _PublishedRideCard extends StatelessWidget {
       caseSensitive: false,
     ).firstMatch(raw);
     if (cityMatch != null) {
-      final parsedCity = cityMatch
-              .group(1)
-              ?.trim()
-              .replaceAll(RegExp(r'''[{}"]'''), '') ??
-          '';
+      final parsedCity =
+          cityMatch.group(1)?.trim().replaceAll(RegExp(r'''[{}"]'''), '') ?? '';
       if (parsedCity.isNotEmpty) {
         city = parsedCity;
       }
@@ -1511,11 +1507,6 @@ class _PublishedRideCard extends StatelessWidget {
         bg = const Color(0xFFFEF2F2);
         fg = const Color(0xFFDC2626);
         label = 'Cancelled';
-        break;
-      default:
-        bg = const Color(0xFFECFDF5);
-        fg = const Color(0xFF059669);
-        label = 'Active';
         break;
     }
     return Container(

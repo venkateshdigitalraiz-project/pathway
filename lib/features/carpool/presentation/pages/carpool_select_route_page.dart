@@ -102,43 +102,6 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
   double? _toLat;
   double? _toLng;
 
-  void _onQuickLocationSelected(String locationName, {double? lat, double? lng}) {
-    final coords = CarpoolDistanceCalculator.resolveCoordinates(
-      locationName,
-      preferredLat: lat,
-      preferredLng: lng,
-      defaultLat: 0.0,
-      defaultLng: 0.0,
-    );
-
-    final bloc = context.read<CarpoolOfferRideBloc>();
-    if (_isEditingFrom) {
-      _fromController.text = locationName;
-      _fromLat = coords.lat;
-      _fromLng = coords.lng;
-      bloc.add(CarpoolOfferFromChanged(locationName, lat: coords.lat, lng: coords.lng));
-      if (_toController.text.trim().isEmpty ||
-          _toController.text.trim().toLowerCase() ==
-              locationName.toLowerCase()) {
-        _toFocus.requestFocus();
-        setState(() {
-          _isEditingFrom = false;
-          _isSearching = true;
-        });
-      } else {
-        FocusScope.of(context).unfocus();
-        setState(() => _isSearching = false);
-      }
-    } else {
-      _toController.text = locationName;
-      _toLat = coords.lat;
-      _toLng = coords.lng;
-      bloc.add(CarpoolOfferToChanged(locationName, lat: coords.lat, lng: coords.lng));
-      FocusScope.of(context).unfocus();
-      setState(() => _isSearching = false);
-    }
-  }
-
   @override
   void initState() {
     super.initState();
@@ -202,7 +165,8 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
         place.description.trim().isNotEmpty) {
       final fetched = await CarpoolDistanceCalculator.fetchGeocodeCoordinates(
         place.placeId.isNotEmpty ? place.placeId : place.description,
-        isPlaceId: place.placeId.isNotEmpty && !place.placeId.startsWith('osm_'),
+        isPlaceId:
+            place.placeId.isNotEmpty && !place.placeId.startsWith('osm_'),
       );
       if (fetched != null) {
         lat = fetched.lat;
@@ -236,7 +200,9 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
       _fromController.text = chosen;
       _fromLat = resolvedLat;
       _fromLng = resolvedLng;
-      bloc.add(CarpoolOfferFromChanged(chosen, lat: resolvedLat, lng: resolvedLng));
+      bloc.add(
+        CarpoolOfferFromChanged(chosen, lat: resolvedLat, lng: resolvedLng),
+      );
       if (_toController.text.trim().isEmpty ||
           _toController.text.trim().toLowerCase() == chosen.toLowerCase()) {
         _toFocus.requestFocus();
@@ -249,7 +215,9 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
       _toController.text = chosen;
       _toLat = resolvedLat;
       _toLng = resolvedLng;
-      bloc.add(CarpoolOfferToChanged(chosen, lat: resolvedLat, lng: resolvedLng));
+      bloc.add(
+        CarpoolOfferToChanged(chosen, lat: resolvedLat, lng: resolvedLng),
+      );
       FocusScope.of(context).unfocus();
       setState(() => _isSearching = false);
     }
@@ -848,22 +816,52 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
                             );
                             return;
                           }
-                          final originCoords = CarpoolDistanceCalculator.resolveCoordinates(
-                            f,
-                            preferredLat: _fromLat ?? (f == s.from && s.fromLat != 0.0 ? s.fromLat : null),
-                            preferredLng: _fromLng ?? (f == s.from && s.fromLng != 0.0 ? s.fromLng : null),
-                            defaultLat: s.fromLat,
-                            defaultLng: s.fromLng,
+                          final originCoords =
+                              CarpoolDistanceCalculator.resolveCoordinates(
+                                f,
+                                preferredLat:
+                                    _fromLat ??
+                                    (f == s.from && s.fromLat != 0.0
+                                        ? s.fromLat
+                                        : null),
+                                preferredLng:
+                                    _fromLng ??
+                                    (f == s.from && s.fromLng != 0.0
+                                        ? s.fromLng
+                                        : null),
+                                defaultLat: s.fromLat,
+                                defaultLng: s.fromLng,
+                              );
+                          final destCoords =
+                              CarpoolDistanceCalculator.resolveCoordinates(
+                                t,
+                                preferredLat:
+                                    _toLat ??
+                                    (t == s.to && s.toLat != 0.0
+                                        ? s.toLat
+                                        : null),
+                                preferredLng:
+                                    _toLng ??
+                                    (t == s.to && s.toLng != 0.0
+                                        ? s.toLng
+                                        : null),
+                                defaultLat: s.toLat,
+                                defaultLng: s.toLng,
+                              );
+                          bloc.add(
+                            CarpoolOfferFromChanged(
+                              f,
+                              lat: originCoords.lat,
+                              lng: originCoords.lng,
+                            ),
                           );
-                          final destCoords = CarpoolDistanceCalculator.resolveCoordinates(
-                            t,
-                            preferredLat: _toLat ?? (t == s.to && s.toLat != 0.0 ? s.toLat : null),
-                            preferredLng: _toLng ?? (t == s.to && s.toLng != 0.0 ? s.toLng : null),
-                            defaultLat: s.toLat,
-                            defaultLng: s.toLng,
+                          bloc.add(
+                            CarpoolOfferToChanged(
+                              t,
+                              lat: destCoords.lat,
+                              lng: destCoords.lng,
+                            ),
                           );
-                          bloc.add(CarpoolOfferFromChanged(f, lat: originCoords.lat, lng: originCoords.lng));
-                          bloc.add(CarpoolOfferToChanged(t, lat: destCoords.lat, lng: destCoords.lng));
                           Navigator.of(context).pop();
                         },
                         child: const Center(
@@ -970,7 +968,9 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1.5),
+                            horizontal: 5,
+                            vertical: 1.5,
+                          ),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF1EEFC),
                             borderRadius: BorderRadius.circular(4),
@@ -1151,10 +1151,7 @@ class _RapidoRouteSearchViewState extends State<_RapidoRouteSearchView> {
               const Text(
                 'Enter an area, landmark, or address to search',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 12.5,
-                  color: Color(0xFF6B658C),
-                ),
+                style: TextStyle(fontSize: 12.5, color: Color(0xFF6B658C)),
               ),
             ],
           ),

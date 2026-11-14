@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pathway/core/theme/app_typography.dart';
 
-import '../../core/party_colors.dart';
+import 'package:pathway/core/theme/party_theme.dart';
 import '../bloc/party_nav_cubit.dart';
 import '../widgets/party_widgets.dart';
 

@@ -359,8 +359,7 @@ class _StopoversViewState extends State<_StopoversView> {
             final rawActive = state.stopovers
                 .where((s) => state.selectedStopovers.contains(s))
                 .toList();
-            final activeStopovers =
-                CarpoolDistanceCalculator.orderStopoversInCorridor(
+            CarpoolDistanceCalculator.orderStopoversInCorridor(
               start: state.from,
               destination: state.to,
               stopovers: rawActive.isNotEmpty
@@ -372,15 +371,14 @@ class _StopoversViewState extends State<_StopoversView> {
               destLng: state.toLng,
             );
 
-            final totalRouteKm =
-                CarpoolDistanceCalculator.calculateDistanceKm(
-                  state.from,
-                  state.to,
-                  fromLat: state.fromLat,
-                  fromLng: state.fromLng,
-                  toLat: state.toLat,
-                  toLng: state.toLng,
-                );
+            final totalRouteKm = CarpoolDistanceCalculator.calculateDistanceKm(
+              state.from,
+              state.to,
+              fromLat: state.fromLat,
+              fromLng: state.fromLng,
+              toLat: state.toLat,
+              toLng: state.toLng,
+            );
             final totalDuration = CarpoolDistanceCalculator.estimateDuration(
               totalRouteKm,
             );
@@ -1034,79 +1032,6 @@ class _StopoversViewState extends State<_StopoversView> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _RouteStatCard extends StatelessWidget {
-  final String label;
-  final String value;
-  final bool isHighlight;
-  final IconData icon;
-
-  const _RouteStatCard({
-    required this.label,
-    required this.value,
-    required this.isHighlight,
-    required this.icon,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isHighlight ? const Color(0xFFFFF1F2) : const Color(0xFFF8F7FD),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isHighlight
-              ? const Color(0xFFFECDD3)
-              : const Color(0xFFEDE8FF),
-          width: 1,
-        ),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                icon,
-                size: 15,
-                color: isHighlight
-                    ? const Color(0xFFBE123C)
-                    : const Color(0xFF5D24F7),
-              ),
-              const SizedBox(width: 6),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: isHighlight
-                        ? const Color(0xFFBE123C)
-                        : const Color(0xFF6B658C),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              color: isHighlight
-                  ? const Color(0xFF9F1239)
-                  : const Color(0xFF140D43),
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

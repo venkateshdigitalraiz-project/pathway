@@ -3,8 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pathway/core/theme/app_typography.dart';
 
-import '../../core/party_colors.dart';
-import '../../core/party_formatters.dart';
+import 'package:pathway/core/theme/party_theme.dart';
+import 'package:pathway/core/utils/party_formatters.dart';
 import '../../domain/entities/party_entities.dart';
 import '../bloc/party_favorites_bloc.dart';
 

@@ -4,6 +4,7 @@ import '../../../../core/theme/app_colors.dart';
 import '../../domain/entities/dashboard_service_item.dart';
 import '../../domain/entities/recent_activity_entry.dart';
 import '../../../party_booking/presentation/pages/party_shell_page.dart';
+import '../../../tour_booking/features/tour_booking/presentation/pages/tour_shell_page.dart';
 import '../bloc/dashboard_bloc.dart';
 import '../bloc/dashboard_event.dart';
 import '../bloc/dashboard_state.dart';
@@ -20,6 +21,7 @@ import '../widgets/service_grid_card.dart';
 class DashboardHomePage extends StatelessWidget {
   final VoidCallback onOpenCarpool;
   final VoidCallback? onOpenPartyBooking;
+  final VoidCallback? onOpenTourPackages;
   final VoidCallback? onOpenActiveRide;
   final VoidCallback? onSeeAllActivity;
 
@@ -27,6 +29,7 @@ class DashboardHomePage extends StatelessWidget {
     super.key,
     required this.onOpenCarpool,
     this.onOpenPartyBooking,
+    this.onOpenTourPackages,
     this.onOpenActiveRide,
     this.onSeeAllActivity,
   });
@@ -178,6 +181,18 @@ class DashboardHomePage extends StatelessWidget {
                                   context,
                                   MaterialPageRoute(
                                     builder: (_) => const PartyShellPage(),
+                                  ),
+                                );
+                              }
+                            } else if (service.type ==
+                                DashboardServiceType.tourPackages) {
+                              if (onOpenTourPackages != null) {
+                                onOpenTourPackages!();
+                              } else {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => const TourShellPage(),
                                   ),
                                 );
                               }

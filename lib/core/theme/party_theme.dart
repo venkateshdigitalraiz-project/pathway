@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:pathway/core/theme/app_colors.dart';
+import 'app_colors.dart';
 
-/// Party Booking colour tokens.
+/// Party Booking colour tokens and theme styles.
 ///
 /// Neutrals, status and text colours are re-used from the app-wide [AppColors]
 /// so the module follows the global theme. Only the module's purple brand
 /// palette (taken from the Party Booking design) is defined here.
-class PartyColors {
-  PartyColors._();
+class PartyTheme {
+  PartyTheme._();
 
   // Module brand (purple)
   static const Color primary = Color(0xFF4A21C4);
@@ -55,3 +55,7 @@ class PartyColors {
     colors: [primaryLight, primary],
   );
 }
+
+/// Backward compatibility alias so existing usages of PartyColors continue to work
+typedef PartyColors = PartyTheme;
+

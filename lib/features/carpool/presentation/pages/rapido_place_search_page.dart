@@ -17,11 +17,7 @@ class CarpoolPlaceResult extends Equatable {
   final double? lat;
   final double? lng;
 
-  const CarpoolPlaceResult({
-    required this.name,
-    this.lat,
-    this.lng,
-  });
+  const CarpoolPlaceResult({required this.name, this.lat, this.lng});
 
   @override
   List<Object?> get props => [name, lat, lng];
@@ -128,7 +124,9 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
 
   Future<void> _onPlaceSelected(PlacePredictionEntity place) async {
     // Return the concise main text (e.g., "Gachibowli") or full description
-    final chosen = place.mainText.isNotEmpty ? place.mainText : place.description;
+    final chosen = place.mainText.isNotEmpty
+        ? place.mainText
+        : place.description;
 
     var lat = place.lat;
     var lng = place.lng;
@@ -136,7 +134,8 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
         place.description.trim().isNotEmpty) {
       final fetched = await CarpoolDistanceCalculator.fetchGeocodeCoordinates(
         place.placeId.isNotEmpty ? place.placeId : place.description,
-        isPlaceId: place.placeId.isNotEmpty && !place.placeId.startsWith('osm_'),
+        isPlaceId:
+            place.placeId.isNotEmpty && !place.placeId.startsWith('osm_'),
       );
       if (fetched != null) {
         lat = fetched.lat;
@@ -161,24 +160,27 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
       );
     }
 
-    Navigator.of(context).pop(CarpoolPlaceResult(
-      name: chosen,
-      lat: coords.lat != 0.0 ? coords.lat : lat,
-      lng: coords.lng != 0.0 ? coords.lng : lng,
-    ));
+    Navigator.of(context).pop(
+      CarpoolPlaceResult(
+        name: chosen,
+        lat: coords.lat != 0.0 ? coords.lat : lat,
+        lng: coords.lng != 0.0 ? coords.lng : lng,
+      ),
+    );
   }
 
   void _onUseCurrentLocation() {
-    Navigator.of(context).pop(const CarpoolPlaceResult(
-      name: 'Current Location',
-      lat: 17.3850,
-      lng: 78.4867,
-    ));
+    Navigator.of(context).pop(
+      const CarpoolPlaceResult(
+        name: 'Current Location',
+        lat: 17.3850,
+        lng: 78.4867,
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final pinColor = widget.isPickup
         ? const Color(0xFF16A34A)
         : const Color(0xFFEF4444);
@@ -264,7 +266,10 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
                     width: 1.3,
                   ),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 4,
+                ),
                 child: Row(
                   children: [
                     // Location indicator pin / dot
@@ -305,11 +310,13 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
                           if (text.trim().isNotEmpty) {
                             final name = text.trim();
                             final geo = CarpoolDistanceCalculator.findGeo(name);
-                            Navigator.of(context).pop(CarpoolPlaceResult(
-                              name: name,
-                              lat: geo?.lat,
-                              lng: geo?.lng,
-                            ));
+                            Navigator.of(context).pop(
+                              CarpoolPlaceResult(
+                                name: name,
+                                lat: geo?.lat,
+                                lng: geo?.lng,
+                              ),
+                            );
                           }
                         },
                         decoration: InputDecoration(
@@ -336,9 +343,9 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
                         onTap: () {
                           _controller.clear();
                           setState(() {});
-                          context
-                              .read<PlacesAutocompleteBloc>()
-                              .add(const PlaceQueryCleared());
+                          context.read<PlacesAutocompleteBloc>().add(
+                            const PlaceQueryCleared(),
+                          );
                         },
                         child: const Padding(
                           padding: EdgeInsets.all(4),
@@ -450,7 +457,8 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
                                 letterSpacing: 0.8,
                               ),
                             ),
-                            if (state.status == PlacesAutocompleteStatus.loading)
+                            if (state.status ==
+                                PlacesAutocompleteStatus.loading)
                               const SizedBox(
                                 width: 14,
                                 height: 14,
@@ -551,10 +559,7 @@ class _RapidoPlaceSearchViewState extends State<_RapidoPlaceSearchView> {
                   ? 'Type an address, landmark, or area'
                   : 'Try typing a different place or area',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12.5,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 12.5, color: Colors.grey.shade600),
             ),
           ],
         ),
@@ -585,10 +590,7 @@ class _PlacePredictionTile extends StatelessWidget {
   final PlacePredictionEntity prediction;
   final VoidCallback onTap;
 
-  const _PlacePredictionTile({
-    required this.prediction,
-    required this.onTap,
-  });
+  const _PlacePredictionTile({required this.prediction, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -616,21 +618,21 @@ class _PlacePredictionTile extends StatelessWidget {
                 color: isVillage
                     ? const Color(0xFFDCFCE7)
                     : (isTown
-                        ? const Color(0xFFF3E8FF)
-                        : const Color(0xFFF1EEFC)),
+                          ? const Color(0xFFF3E8FF)
+                          : const Color(0xFFF1EEFC)),
                 shape: BoxShape.circle,
               ),
               child: Icon(
                 isVillage
                     ? Icons.home_rounded
                     : (isTown
-                        ? Icons.location_city_rounded
-                        : Icons.location_on_rounded),
+                          ? Icons.location_city_rounded
+                          : Icons.location_on_rounded),
                 color: isVillage
                     ? const Color(0xFF15803D)
                     : (isTown
-                        ? const Color(0xFF7E22CE)
-                        : const Color(0xFF3815D8)),
+                          ? const Color(0xFF7E22CE)
+                          : const Color(0xFF3815D8)),
                 size: 17,
               ),
             ),
@@ -664,8 +666,8 @@ class _PlacePredictionTile extends StatelessWidget {
                           color: isVillage
                               ? const Color(0xFFDCFCE7)
                               : (isTown
-                                  ? const Color(0xFFF3E8FF)
-                                  : const Color(0xFFDBEAFE)),
+                                    ? const Color(0xFFF3E8FF)
+                                    : const Color(0xFFDBEAFE)),
                           borderRadius: BorderRadius.circular(5),
                         ),
                         child: Text(
@@ -676,8 +678,8 @@ class _PlacePredictionTile extends StatelessWidget {
                             color: isVillage
                                 ? const Color(0xFF15803D)
                                 : (isTown
-                                    ? const Color(0xFF7E22CE)
-                                    : const Color(0xFF1D4ED8)),
+                                      ? const Color(0xFF7E22CE)
+                                      : const Color(0xFF1D4ED8)),
                           ),
                         ),
                       ),
@@ -713,4 +715,3 @@ class _PlacePredictionTile extends StatelessWidget {
     );
   }
 }
-

@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../core/party_formatters.dart';
-import '../../core/party_status.dart';
+import 'package:pathway/core/utils/party_formatters.dart';
+import 'package:pathway/core/utils/party_status.dart';
 import '../../domain/entities/party_entities.dart';
 import '../bloc/party_favorites_bloc.dart';
 import '../bloc/party_home_bloc.dart';

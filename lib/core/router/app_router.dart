@@ -11,6 +11,7 @@ import '../../features/auth/presentation/pages/name_input_page.dart';
 import '../../features/carpool/presentation/pages/carpool_shell_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_shell_page.dart';
 import '../../features/party_booking/presentation/pages/party_shell_page.dart';
+import '../../features/tour_booking/features/tour_booking/presentation/pages/tour_shell_page.dart';
 
 /// Centralized route constants for type-safe and consistent navigation
 class AppRoutes {
@@ -20,6 +21,8 @@ class AppRoutes {
   static const String nameInput = '/name-input';
   static const String carpool = '/carpool';
   static const String party = '/party';
+  static const String tours = '/tours';
+  static const String tour = '/tour';
   static const String main = '/';
 }
 
@@ -124,6 +127,16 @@ class AppRouter {
           path: AppRoutes.party,
           name: 'party',
           builder: (context, state) => const PartyShellPage(),
+        ),
+        GoRoute(
+          path: AppRoutes.tours,
+          name: 'tours',
+          builder: (context, state) => const TourShellPage(),
+        ),
+        GoRoute(
+          path: AppRoutes.tour,
+          name: 'tour',
+          builder: (context, state) => const TourShellPage(),
         ),
       ],
       errorBuilder: (context, state) => Scaffold(

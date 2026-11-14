@@ -26,13 +26,6 @@ class DashboardRemoteDataSourceImpl implements DashboardRemoteDataSource {
           route: '/carpool',
         ),
         DashboardServiceItem(
-          id: 'srv_delivery',
-          type: DashboardServiceType.delivery,
-          title: 'Delivery',
-          subtitle: 'Send & receive parcels',
-          route: '/delivery',
-        ),
-        DashboardServiceItem(
           id: 'srv_party',
           type: DashboardServiceType.partyBooking,
           title: 'Party Booking',

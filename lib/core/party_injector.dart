@@ -1,16 +1,16 @@
-import '../data/datasources/party_mock_data_source.dart';
-import '../data/datasources/party_remote_data_source.dart';
-import '../data/repositories/party_repository_impl.dart';
-import '../domain/entities/party_entities.dart';
-import '../domain/repositories/party_repository.dart';
-import '../domain/usecases/party_usecases.dart';
-import '../presentation/bloc/party_booking_form_bloc.dart';
-import '../presentation/bloc/party_category_bloc.dart';
-import '../presentation/bloc/party_favorites_bloc.dart';
-import '../presentation/bloc/party_home_bloc.dart';
-import '../presentation/bloc/party_my_bookings_bloc.dart';
-import '../presentation/bloc/party_venue_detail_bloc.dart';
-import '../presentation/bloc/party_venue_list_bloc.dart';
+import 'package:pathway/features/party_booking/data/datasources/party_mock_data_source.dart';
+import 'package:pathway/features/party_booking/data/datasources/party_remote_data_source.dart';
+import 'package:pathway/features/party_booking/data/repositories/party_repository_impl.dart';
+import 'package:pathway/features/party_booking/domain/entities/party_entities.dart';
+import 'package:pathway/features/party_booking/domain/repositories/party_repository.dart';
+import 'package:pathway/features/party_booking/domain/usecases/party_usecases.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_booking_form_bloc.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_category_bloc.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_favorites_bloc.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_home_bloc.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_my_bookings_bloc.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_venue_detail_bloc.dart';
+import 'package:pathway/features/party_booking/presentation/bloc/party_venue_list_bloc.dart';
 
 /// Lightweight manual DI for the Party Booking module.
 /// Swap [PartyMockDataSource] for a real API data source here.
@@ -48,3 +48,4 @@ class PartyInjector {
   PartyFavoritesBloc favoritesBloc() => PartyFavoritesBloc(
       getFavorites: _getFavorites, toggleFavorite: _toggleFavorite);
 }
+

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:pathway/features/carpool/presentation/pages/carpool_shell_page.dart';
 import 'package:pathway/features/party_booking/presentation/pages/party_shell_page.dart';
+import 'package:pathway/features/tour_booking/features/tour_booking/presentation/pages/tour_shell_page.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../auth/presentation/bloc/auth_bloc.dart';
@@ -57,6 +58,13 @@ class _DashboardShellPageState extends State<DashboardShellPage>
     );
   }
 
+  void _onOpenTourPackages() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const TourShellPage()),
+    );
+  }
+
   void _onTabTapped(int index) {
     if (index == 3) {
       context.read<AuthBloc>().add(const FetchUserProfileEvent());
@@ -74,6 +82,7 @@ class _DashboardShellPageState extends State<DashboardShellPage>
       DashboardHomePage(
         onOpenCarpool: _onOpenCarpool,
         onOpenPartyBooking: _onOpenPartyBooking,
+        onOpenTourPackages: _onOpenTourPackages,
         onOpenActiveRide: _onOpenCarpool,
         onSeeAllActivity: () => _onTabTapped(2),
       ),
@@ -316,6 +325,9 @@ class _DashboardShellPageState extends State<DashboardShellPage>
                           } else if (service.type ==
                               DashboardServiceType.partyBooking) {
                             _onOpenPartyBooking();
+                          } else if (service.type ==
+                              DashboardServiceType.tourPackages) {
+                            _onOpenTourPackages();
                           } else {
                             _showComingSoonDialog(
                               context,
