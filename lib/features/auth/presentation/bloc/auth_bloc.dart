@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
+import '../../../../core/storage/auth_local_storage.dart';
 import '../../domain/usecases/continue_as_guest_usecase.dart';
 import '../../domain/usecases/get_current_user_usecase.dart';
 import '../../domain/usecases/get_user_profile_usecase.dart';
@@ -10,6 +11,7 @@ import '../../domain/usecases/logout_usecase.dart';
 import '../../domain/usecases/register_user_usecase.dart';
 import '../../domain/usecases/register_with_email_usecase.dart';
 import '../../domain/usecases/resend_phone_otp_usecase.dart';
+import '../../domain/usecases/save_user_details_usecase.dart';
 import '../../domain/usecases/send_phone_otp_usecase.dart';
 import '../../domain/usecases/update_profile_name_usecase.dart';
 import '../../domain/usecases/update_survey_preferences_usecase.dart';
@@ -30,6 +32,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
   final RegisterUserUseCase registerUserUseCase;
   final ContinueAsGuestUseCase continueAsGuestUseCase;
   final UpdateProfileNameUseCase updateProfileNameUseCase;
+  final SaveUserDetailsUseCase saveUserDetailsUseCase;
   final UpdateSurveyPreferencesUseCase updateSurveyPreferencesUseCase;
   final LogoutUseCase logoutUseCase;
 
@@ -46,6 +49,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     RegisterUserUseCase? registerUserUseCase,
     ContinueAsGuestUseCase? continueAsGuestUseCase,
     UpdateProfileNameUseCase? updateProfileNameUseCase,
+    SaveUserDetailsUseCase? saveUserDetailsUseCase,
     UpdateSurveyPreferencesUseCase? updateSurveyPreferencesUseCase,
     LogoutUseCase? logoutUseCase,
     UserProfile? initialUser,
@@ -71,6 +75,8 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
             continueAsGuestUseCase ?? ContinueAsGuestUseCase(authRepository),
         updateProfileNameUseCase =
             updateProfileNameUseCase ?? UpdateProfileNameUseCase(authRepository),
+        saveUserDetailsUseCase =
+            saveUserDetailsUseCase ?? SaveUserDetailsUseCase(authRepository),
         updateSurveyPreferencesUseCase = updateSurveyPreferencesUseCase ??
             UpdateSurveyPreferencesUseCase(authRepository),
         logoutUseCase = logoutUseCase ?? LogoutUseCase(authRepository),
@@ -102,6 +108,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     on<SaveHolidayPreferencesEvent>(_onSaveHolidayPreferences);
     on<SaveHomeExchangePreferenceEvent>(_onSaveHomeExchangePreference);
     on<SaveProfileNameEvent>(_onSaveProfileName);
+    on<SaveUserDetailsEvent>(_onSaveUserDetails);
     on<LogoutEvent>(_onLogout);
   }
 
@@ -221,13 +228,64 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         phoneNumber: event.phoneNumber,
         otp: event.otp,
       );
+
+      final bool isProfileDone = AuthLocalStorage().isProfileCompleted();
+      final bool isFirstTime = !isProfileDone ||
+          user.firstName.isEmpty ||
+          user.firstName.trim().toLowerCase() == 'user' ||
+          user.email.isEmpty;
+
+      if (isFirstTime) {
+        emit(state.copyWith(
+          status: AuthStatus.requireUserDetails,
+          user: user,
+          phoneNumber: event.phoneNumber,
+          isFirstTime: true,
+          isOtpSent: false,
+          errorMessage: null,
+        ));
+      } else {
+        emit(state.copyWith(
+          status: AuthStatus.authenticated,
+          user: user,
+          phoneNumber: event.phoneNumber,
+          isFirstTime: false,
+          isOtpSent: false,
+          successMessage: 'Welcome to Pathway!',
+          errorMessage: null,
+        ));
+      }
+    } catch (e) {
+      final message = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
+      emit(state.copyWith(
+        status: AuthStatus.error,
+        errorMessage: message,
+      ));
+    }
+  }
+
+  Future<void> _onSaveUserDetails(
+    SaveUserDetailsEvent event,
+    Emitter<AuthState> emit,
+  ) async {
+    emit(state.copyWith(
+      status: AuthStatus.loading,
+      errorMessage: null,
+      successMessage: null,
+    ));
+    try {
+      final user = await saveUserDetailsUseCase(
+        fullName: event.fullName,
+        email: event.email,
+        reference: event.reference,
+        gender: event.gender,
+      );
       emit(state.copyWith(
         status: AuthStatus.authenticated,
         user: user,
-        phoneNumber: event.phoneNumber,
         isFirstTime: false,
-        isOtpSent: false,
-        successMessage: 'Welcome to Pathway!',
+        successMessage: 'Welcome to Pathway, ${user.firstName}!',
+        errorMessage: null,
       ));
     } catch (e) {
       final message = e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');

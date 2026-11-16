@@ -152,6 +152,39 @@ class AuthRepositoryImpl implements AuthRepository {
   }
 
   @override
+  Future<UserProfile> saveUserDetails({
+    required String fullName,
+    required String email,
+    String? reference,
+    required String gender,
+  }) async {
+    final currentUser = await localDataSource.getUser();
+    final trimmedName = fullName.trim();
+    final parts = trimmedName.split(' ');
+    final firstName = parts.isNotEmpty ? parts.first : trimmedName;
+    final lastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+
+    final updated = (currentUser ??
+            UserProfile(
+              id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
+              firstName: firstName,
+              lastName: lastName,
+              email: email.trim(),
+            ))
+        .copyWith(
+      firstName: firstName,
+      lastName: lastName,
+      email: email.trim(),
+      gender: gender.trim(),
+      reference: reference?.trim(),
+    );
+
+    await localDataSource.saveUser(updated);
+    await localDataSource.authStorage.setProfileCompleted(true);
+    return updated;
+  }
+
+  @override
   Future<UserProfile> continueAsGuest() async {
     const guest = UserProfile(
       id: 'guest_user',

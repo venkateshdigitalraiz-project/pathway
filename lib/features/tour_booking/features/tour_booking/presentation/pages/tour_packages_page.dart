@@ -27,8 +27,13 @@ class TourPackagesPage extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => TourInjector.I.packagesBloc()
-        ..add(TourPackagesStarted(
-            categoryId: categoryId, query: query, openSearch: openSearch)),
+        ..add(
+          TourPackagesStarted(
+            categoryId: categoryId,
+            query: query,
+            openSearch: openSearch,
+          ),
+        ),
       child: const _PackagesView(),
     );
   }
@@ -88,34 +93,35 @@ class _PackagesView extends StatelessWidget {
               ),
               const SizedBox(height: 8),
               Expanded(
-                child: state.status == TourStatus.loading &&
-                        state.packages.isEmpty
+                child:
+                    state.status == TourStatus.loading && state.packages.isEmpty
                     ? const Center(child: CircularProgressIndicator())
                     : state.packages.isEmpty
-                        ? Center(
-                            child: Text('No packages found.',
-                                style: AppTypography.bodyMedium),
-                          )
-                        : ListView.separated(
-                            padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
-                            itemCount: state.packages.length,
-                            separatorBuilder: (_, __) =>
-                                const SizedBox(height: 16),
-                            itemBuilder: (context, i) {
-                              final p = state.packages[i];
-                              return TourPackageCard(
-                                package: p,
-                                horizontal: i.isOdd,
-                                onTap: () => TourNavigator.push(
-                                  context,
-                                  TourDetailPage(
-                                    packageId: p.id,
-                                    heroImage: TourImage.assetForPackage(p.id),
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                    ? Center(
+                        child: Text(
+                          'No packages found.',
+                          style: AppTypography.bodyMedium,
+                        ),
+                      )
+                    : ListView.separated(
+                        padding: const EdgeInsets.fromLTRB(16, 6, 16, 24),
+                        itemCount: state.packages.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 16),
+                        itemBuilder: (context, i) {
+                          final p = state.packages[i];
+                          return TourPackageCard(
+                            package: p,
+                            horizontal: i.isOdd,
+                            onTap: () => TourNavigator.push(
+                              context,
+                              TourDetailPage(
+                                packageId: p.id,
+                                heroImage: TourImage.assetForPackage(p.id),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
               ),
             ],
           );
@@ -126,8 +132,11 @@ class _PackagesView extends StatelessWidget {
 }
 
 class _FilterChip extends StatelessWidget {
-  const _FilterChip(
-      {required this.label, required this.selected, required this.onTap});
+  const _FilterChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
   final String label;
   final bool selected;
   final VoidCallback onTap;
@@ -143,8 +152,7 @@ class _FilterChip extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 18),
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color:
-                selected ? const Color(0xFF3B46E8) : const Color(0xFFF4F6F9),
+            color: selected ? const Color(0xFF3B46E8) : const Color(0xFFF4F6F9),
             borderRadius: BorderRadius.circular(21),
           ),
           child: Text(
@@ -171,8 +179,9 @@ class _SearchField extends StatefulWidget {
 }
 
 class _SearchFieldState extends State<_SearchField> {
-  late final TextEditingController _controller =
-      TextEditingController(text: widget.initial);
+  late final TextEditingController _controller = TextEditingController(
+    text: widget.initial,
+  );
 
   @override
   void dispose() {

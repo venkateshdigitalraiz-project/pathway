@@ -21,6 +21,7 @@ class RiderBookingEntity extends Equatable {
     required this.bookingDate,
     this.vehicleNumber,
     this.otpCode,
+    this.passengerNotes,
   });
 
   final String id;
@@ -39,9 +40,11 @@ class RiderBookingEntity extends Equatable {
   final DateTime bookingDate;
   final String? vehicleNumber;
   final String? otpCode;
+  final String? passengerNotes;
 
   RiderBookingEntity copyWith({
     RiderBookingStatus? status,
+    String? passengerNotes,
   }) {
     return RiderBookingEntity(
       id: id,
@@ -60,6 +63,7 @@ class RiderBookingEntity extends Equatable {
       bookingDate: bookingDate,
       vehicleNumber: vehicleNumber,
       otpCode: otpCode,
+      passengerNotes: passengerNotes ?? this.passengerNotes,
     );
   }
 
@@ -81,6 +85,7 @@ class RiderBookingEntity extends Equatable {
         bookingDate,
         vehicleNumber,
         otpCode,
+        passengerNotes,
       ];
 }
 

@@ -13,6 +13,8 @@ class UserProfile extends Equatable {
   final String? homeExchangeInterest; // 'already_done', 'interested', 'no', 'dont_know'
   final double rating;
   final int ridesCompleted;
+  final String? gender; // 'Male', 'Female', 'Others'
+  final String? reference; // Referral / Reference code or name
 
   const UserProfile({
     required this.id,
@@ -27,6 +29,8 @@ class UserProfile extends Equatable {
     this.homeExchangeInterest,
     this.rating = 5.0,
     this.ridesCompleted = 0,
+    this.gender,
+    this.reference,
   });
 
   String get fullName => '$firstName $lastName'.trim();
@@ -44,6 +48,8 @@ class UserProfile extends Equatable {
     String? homeExchangeInterest,
     double? rating,
     int? ridesCompleted,
+    String? gender,
+    String? reference,
   }) {
     return UserProfile(
       id: id ?? this.id,
@@ -58,6 +64,8 @@ class UserProfile extends Equatable {
       homeExchangeInterest: homeExchangeInterest ?? this.homeExchangeInterest,
       rating: rating ?? this.rating,
       ridesCompleted: ridesCompleted ?? this.ridesCompleted,
+      gender: gender ?? this.gender,
+      reference: reference ?? this.reference,
     );
   }
 
@@ -75,6 +83,8 @@ class UserProfile extends Equatable {
       'homeExchangeInterest': homeExchangeInterest,
       'rating': rating,
       'ridesCompleted': ridesCompleted,
+      'gender': gender,
+      'reference': reference,
     };
   }
 
@@ -95,6 +105,8 @@ class UserProfile extends Equatable {
       homeExchangeInterest: json['homeExchangeInterest'] as String?,
       rating: (json['rating'] as num?)?.toDouble() ?? 5.0,
       ridesCompleted: (json['ridesCompleted'] as num?)?.toInt() ?? 0,
+      gender: json['gender'] as String?,
+      reference: json['reference'] as String?,
     );
   }
 
@@ -112,5 +124,7 @@ class UserProfile extends Equatable {
         homeExchangeInterest,
         rating,
         ridesCompleted,
+        gender,
+        reference,
       ];
 }

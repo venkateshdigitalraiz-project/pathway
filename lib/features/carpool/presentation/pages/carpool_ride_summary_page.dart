@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/utils/carpool_distance_calculator.dart';
@@ -176,21 +176,21 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
         // Total distance considers direct origin to destination location (no halt distance added)
         final double distanceKmDouble =
             ((_liveDistanceResult?.distanceKm != null &&
-                      _liveDistanceResult!.distanceKm > 0 &&
-                      _liveDistanceResult!.distanceKm <= 3800)
-                  ? _liveDistanceResult!.distanceKm.toDouble()
-                  : ((pricing?.distanceKm != null &&
-                            pricing!.distanceKm > 0 &&
-                            pricing.distanceKm <= 3800)
-                        ? pricing.distanceKm
-                        : CarpoolDistanceCalculator.calculateDistanceKm(
-                            s.from,
-                            s.to,
-                            fromLat: s.fromLat,
-                            fromLng: s.fromLng,
-                            toLat: s.toLat,
-                            toLng: s.toLng,
-                          ).toDouble()));
+                _liveDistanceResult!.distanceKm > 0 &&
+                _liveDistanceResult!.distanceKm <= 3800)
+            ? _liveDistanceResult!.distanceKm.toDouble()
+            : ((pricing?.distanceKm != null &&
+                      pricing!.distanceKm > 0 &&
+                      pricing.distanceKm <= 3800)
+                  ? pricing.distanceKm
+                  : CarpoolDistanceCalculator.calculateDistanceKm(
+                      s.from,
+                      s.to,
+                      fromLat: s.fromLat,
+                      fromLng: s.fromLng,
+                      toLat: s.toLat,
+                      toLng: s.toLng,
+                    ).toDouble()));
 
         final int distanceKm = distanceKmDouble.round();
         final int suggestedPrice =
@@ -206,7 +206,8 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
         final int effectiveTotalPrice = effectivePricePerSeat * seats;
         final int totalPrice = effectiveTotalPrice;
         final int pricePerSeat = effectivePricePerSeat;
-        final String durationText = _liveDistanceResult?.durationText ??
+        final String durationText =
+            _liveDistanceResult?.durationText ??
             pricing?.formattedDuration ??
             CarpoolDistanceCalculator.estimateDuration(distanceKm);
 
@@ -411,13 +412,16 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                         child: ListView(
                           padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
                           children: [
-                            // ── 1. Route Locations Card ─────────────────────
+                            // ── 1. Route Locations Card (with integrated Date & Time) ──
                             _buildRouteCard(
                               s.from,
                               s.to,
                               distanceKm,
                               durationText,
                               stopovers: orderedStops,
+                              departure: s.departure,
+                              context: context,
+                              bloc: bloc,
                             ),
 
                             const SizedBox(height: 14),
@@ -432,17 +436,9 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
 
                             const SizedBox(height: 14),
 
-                            // ── 2. Date & Time Row ──────────────────────────
-                            _buildDateTimeRow(s.departure),
-
-                            const SizedBox(height: 14),
-
-                            // ── 3. Number of Seats Booking ──────────────────
-                            _buildSeatsBookingRow(s.seats, bloc),
-
-                            const SizedBox(height: 16),
-
-                            _buildPriceMarginRow(
+                            // ── 3. Seats & Pricing Setup Card ───────────────
+                            _buildSeatsAndPricingCard(
+                              seats: s.seats,
                               pricePerSeat: effectivePricePerSeat,
                               totalPrice: effectiveTotalPrice,
                               distanceKm: distanceKm,
@@ -452,7 +448,8 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                               maxPrice: maxAllowedPrice,
                               bloc: bloc,
                             ),
-                            const SizedBox(height: 18),
+
+                            const SizedBox(height: 16),
 
                             // ── 4. Distance & Price Calculation ────────────
                             _buildPriceCalculationCard(
@@ -583,23 +580,81 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
   }
 
   /// Estimates travel duration based on distance
-  String _estimateDuration(int distanceKm) {
-    final totalMinutes = (distanceKm / 65 * 60).round();
-    final hours = totalMinutes ~/ 60;
-    final mins = totalMinutes % 60;
-    if (hours > 0) {
-      return '$hours hr ${mins > 0 ? '$mins min' : ''}';
+  // String _estimateDuration(int distanceKm) {
+  //   final totalMinutes = (distanceKm / 65 * 60).round();
+  //   final hours = totalMinutes ~/ 60;
+  //   final mins = totalMinutes % 60;
+  //   if (hours > 0) {
+  //     return '$hours hr ${mins > 0 ? '$mins min' : ''}';
+  //   }
+  //   return '$mins min';
+  // }
+
+  Future<void> _pickDate(
+    BuildContext context,
+    CarpoolOfferRideBloc bloc,
+    DateTime current,
+  ) async {
+    final now = DateTime.now();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: current.isBefore(now) ? now : current,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: now.add(const Duration(days: 180)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF3815D8),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF140D43),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && context.mounted) {
+      bloc.add(CarpoolOfferDateChanged(picked));
     }
-    return '$mins min';
   }
 
-  /// Builds the Route From & To display card with accurate Google Map styling
+  Future<void> _pickTime(
+    BuildContext context,
+    CarpoolOfferRideBloc bloc,
+    DateTime current,
+  ) async {
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: current.hour, minute: current.minute),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: Color(0xFF3815D8),
+              onPrimary: Colors.white,
+              onSurface: Color(0xFF140D43),
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+    if (picked != null && context.mounted) {
+      bloc.add(CarpoolOfferTimeChanged(picked.hour, picked.minute));
+    }
+  }
+
+  /// Builds the Route From & To display card with accurate Google Map styling and integrated Date & Time
   Widget _buildRouteCard(
     String from,
     String to,
     int distanceKm,
     String duration, {
     List<String> stopovers = const [],
+    required DateTime departure,
+    BuildContext? context,
+    CarpoolOfferRideBloc? bloc,
   }) {
     final fromGeo = CarpoolDistanceCalculator.findGeo(from);
     final toGeo = CarpoolDistanceCalculator.findGeo(to);
@@ -663,6 +718,123 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
               ),
             ],
           ),
+
+          const SizedBox(height: 12),
+
+          // Date of Your Journey Row (Clean text display on top)
+          InkWell(
+            onTap: (context != null && bloc != null)
+                ? () async {
+                    await _pickDate(context, bloc, departure);
+                  }
+                : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF3815D8).withOpacity(0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.calendar_month_rounded,
+                      color: Color(0xFF3815D8),
+                      size: 14,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'DATE OF YOUR JOURNEY',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF6B658C),
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(
+                              CarpoolFormatters.date(departure),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF140D43),
+                              ),
+                            ),
+                            Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 8),
+                              width: 4,
+                              height: 4,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFF8E88B0),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            GestureDetector(
+                              onTap: (context != null && bloc != null)
+                                  ? () => _pickTime(context, bloc, departure)
+                                  : null,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.access_time_rounded,
+                                    size: 14.5,
+                                    color: Color(0xFF3815D8),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    CarpoolFormatters.time(departure),
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF140D43),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                  InkWell(
+                    onTap: (context != null && bloc != null)
+                        ? () => _pickDate(context, bloc, departure)
+                        : null,
+                    borderRadius: BorderRadius.circular(8),
+                    child: const Padding(
+                      padding: EdgeInsets.all(4),
+                      child: Icon(
+                        Icons.edit_calendar_rounded,
+                        size: 16,
+                        color: Color(0xFF9E9AB8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Divider between Journey Date & Route Locations
+          Container(height: 1, color: const Color(0xFFEDE8FF)),
 
           const SizedBox(height: 12),
 
@@ -1249,180 +1421,9 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     );
   }
 
-  /// Builds the Date & Time Row with rounded info pills
-  Widget _buildDateTimeRow(DateTime departure) {
-    return Row(
-      children: [
-        // Date Pill
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F7FD),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFEDE8FF), width: 1.2),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.calendar_month_rounded,
-                  color: Color(0xFF3815D8),
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Date',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B658C),
-                        ),
-                      ),
-                      Text(
-                        CarpoolFormatters.date(departure),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF140D43),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-
-        const SizedBox(width: 10),
-
-        // Time Pill
-        Expanded(
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F7FD),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFFEDE8FF), width: 1.2),
-            ),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.access_time_rounded,
-                  color: Color(0xFF3815D8),
-                  size: 22,
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Time',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B658C),
-                        ),
-                      ),
-                      Text(
-                        CarpoolFormatters.time(departure),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF140D43),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Builds the Seats Booking Row with Stepper
-  Widget _buildSeatsBookingRow(int seats, CarpoolOfferRideBloc bloc) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8F7FD),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFEDE8FF), width: 1.2),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.event_seat_rounded,
-            color: Color(0xFF3815D8),
-            size: 24,
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'Seats Available / Booking',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF140D43),
-                  ),
-                ),
-                Text(
-                  'Select number of passenger seats',
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF6B658C),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Stepper
-          Row(
-            children: [
-              _StepperBtn(
-                icon: Icons.remove_rounded,
-                onTap: () => bloc.add(const CarpoolOfferSeatsChanged(-1)),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(
-                  '$seats',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF140D43),
-                  ),
-                ),
-              ),
-              _StepperBtn(
-                icon: Icons.add_rounded,
-                onTap: () => bloc.add(const CarpoolOfferSeatsChanged(1)),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  /// Builds the Price Margin Row matching the exact style of [_buildSeatsBookingRow]
-  Widget _buildPriceMarginRow({
+  /// Unified, clean and intuitive Seats & Price configuration card
+  Widget _buildSeatsAndPricingCard({
+    required int seats,
     required int pricePerSeat,
     required int totalPrice,
     required int distanceKm,
@@ -1432,80 +1433,321 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     int? maxPrice,
     required CarpoolOfferRideBloc bloc,
   }) {
+    final bool canDecrementSeats = seats > 1;
+    final bool canIncrementSeats = seats < 8;
+    final bool canDecreasePrice = minPrice == null || pricePerSeat > minPrice;
+    final bool canIncreasePrice = maxPrice == null || pricePerSeat < maxPrice;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8F7FD),
-        borderRadius: BorderRadius.circular(16),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
         border: Border.all(color: const Color(0xFFEDE8FF), width: 1.2),
-      ),
-      child: Row(
-        children: [
-          const Icon(
-            Icons.currency_rupee_rounded,
-            color: Color(0xFF3815D8),
-            size: 24,
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF3815D8).withOpacity(0.05),
+            blurRadius: 16,
+            offset: const Offset(0, 4),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // ── Row 1: Available Seats ──────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 14),
+            child: Row(
               children: [
-                const Text(
-                  'Price per Seat / Margin',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF140D43),
+                // Soft tinted circular icon badge
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF3F0FF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.event_seat_rounded,
+                    color: Color(0xFF3815D8),
+                    size: 22,
                   ),
                 ),
-                Text(
-                  suggestedPrice != null
-                      ? '₹$ratePerKm/km • Suggested: ₹$suggestedPrice (₹${minPrice ?? 0}-₹${maxPrice ?? 0})'
-                      : '₹$ratePerKm/km ($distanceKm km) • Total: ₹$totalPrice',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF6B658C),
+                const SizedBox(width: 12),
+
+                // Labels
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Available Seats',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF140D43),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'How many passengers can join',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B658C),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Stepper for Seats
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F7FD),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE5E0FA)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ModernCircleStepperBtn(
+                        icon: Icons.remove_rounded,
+                        enabled: canDecrementSeats,
+                        onTap: () {
+                          if (canDecrementSeats) {
+                            bloc.add(const CarpoolOfferSeatsChanged(-1));
+                          }
+                        },
+                      ),
+                      Container(
+                        constraints: const BoxConstraints(minWidth: 34),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '$seats',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                      ),
+                      _ModernCircleStepperBtn(
+                        icon: Icons.add_rounded,
+                        enabled: canIncrementSeats,
+                        onTap: () {
+                          if (canIncrementSeats) {
+                            bloc.add(const CarpoolOfferSeatsChanged(1));
+                          }
+                        },
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          // Price Stepper in the exact style of seats stepper
-          Row(
-            children: [
-              _StepperBtn(
-                icon: Icons.remove_rounded,
-                onTap: () => bloc.add(
-                  CarpoolOfferPriceChanged(-10, currentBasePrice: pricePerSeat),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 10),
-                child: Text(
-                  '₹$pricePerSeat',
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF140D43),
+
+          // Clean Subtle Divider
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Divider(height: 1, thickness: 1, color: Color(0xFFF2EFFD)),
+          ),
+
+          // ── Row 2: Price per Seat ───────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            child: Row(
+              children: [
+                // Soft tinted circular rupee icon badge
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE0F7EF),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  alignment: Alignment.center,
+                  child: const Icon(
+                    Icons.currency_rupee_rounded,
+                    color: Color(0xFF059669),
+                    size: 22,
                   ),
                 ),
-              ),
-              _StepperBtn(
-                icon: Icons.add_rounded,
-                onTap: () => bloc.add(
-                  CarpoolOfferPriceChanged(10, currentBasePrice: pricePerSeat),
+                const SizedBox(width: 12),
+
+                // Labels
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Price per Seat',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF140D43),
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Fare charged to each passenger',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: Color(0xFF6B658C),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
+                const SizedBox(width: 8),
+
+                // Stepper for Price (±10)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 4,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F7FD),
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: const Color(0xFFE5E0FA)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _ModernCircleStepperBtn(
+                        icon: Icons.remove_rounded,
+                        enabled: canDecreasePrice,
+                        onTap: () {
+                          if (canDecreasePrice) {
+                            bloc.add(
+                              CarpoolOfferPriceChanged(
+                                -10,
+                                currentBasePrice: pricePerSeat,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                      Container(
+                        constraints: const BoxConstraints(minWidth: 54),
+                        alignment: Alignment.center,
+                        child: Text(
+                          '₹$pricePerSeat',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                      ),
+                      _ModernCircleStepperBtn(
+                        icon: Icons.add_rounded,
+                        enabled: canIncreasePrice,
+                        onTap: () {
+                          if (canIncreasePrice) {
+                            bloc.add(
+                              CarpoolOfferPriceChanged(
+                                10,
+                                currentBasePrice: pricePerSeat,
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // ── Bottom Reassurance Banner ───────────────────────
+          if (suggestedPrice != null) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: const BoxDecoration(
+                color: Color(0xFFF8FCFA),
+                borderRadius: BorderRadius.vertical(
+                  bottom: Radius.circular(20),
+                ),
+                border: Border(
+                  top: BorderSide(color: Color(0xFFE9F7F1), width: 1),
                 ),
               ),
-            ],
-          ),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    color: Color(0xFF10B981),
+                    size: 16,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Recommended: ₹$suggestedPrice  •  Fair limit: ₹${minPrice ?? 0} – ₹${maxPrice ?? 0}',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF047857),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
+
+  /// Backward-compatible delegate for seats row
+  // Widget _buildSeatsBookingRow(int seats, CarpoolOfferRideBloc bloc) {
+  //   return _buildSeatsAndPricingCard(
+  //     seats: seats,
+  //     pricePerSeat: 0,
+  //     totalPrice: 0,
+  //     distanceKm: 0,
+  //     ratePerKm: 3.5,
+  //     bloc: bloc,
+  //   );
+  // }
+
+  /// Backward-compatible delegate for price row
+  // Widget _buildPriceMarginRow({
+  //   required int pricePerSeat,
+  //   required int totalPrice,
+  //   required int distanceKm,
+  //   required num ratePerKm,
+  //   int? suggestedPrice,
+  //   int? minPrice,
+  //   int? maxPrice,
+  //   required CarpoolOfferRideBloc bloc,
+  // }) {
+  //   return _buildSeatsAndPricingCard(
+  //     seats: 1,
+  //     pricePerSeat: pricePerSeat,
+  //     totalPrice: totalPrice,
+  //     distanceKm: distanceKm,
+  //     ratePerKm: ratePerKm,
+  //     suggestedPrice: suggestedPrice,
+  //     minPrice: minPrice,
+  //     maxPrice: maxPrice,
+  //     bloc: bloc,
+  //   );
+  // }
 
   /// Builds the Price & Distance breakdown card using dynamic pricing calculation
   Widget _buildPriceCalculationCard({
@@ -1517,130 +1759,246 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     CarpoolPricingEntity? pricing,
     String? durationText,
   }) {
-    final String displayDistance = distanceKm is double && distanceKm % 1 != 0
-        ? distanceKm.toStringAsFixed(1)
-        : '${distanceKm.round()}';
+    // final String displayDistance = distanceKm is double && distanceKm % 1 != 0
+    //     ? distanceKm.toStringAsFixed(1)
+    //     : '${distanceKm.round()}';
 
     final String displayRate = ratePerKm is double && ratePerKm % 1 != 0
         ? ratePerKm.toStringAsFixed(1)
         : '${ratePerKm.round()}';
 
-    final String displayDuration =
-        durationText ??
-        (pricing != null
-            ? pricing.formattedDuration
-            : _estimateDuration(distanceKm.round()));
+    // final String displayDuration =
+    //     durationText ??
+    //     (pricing != null
+    //         ? pricing.formattedDuration
+    //         : _estimateDuration(distanceKm.round()));
 
     return Container(
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF4F1FD),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE2DCF9), width: 1.3),
+        border: Border.all(color: const Color(0xFFEDE8FF), width: 1.4),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF5B3BF5).withOpacity(0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 5),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.receipt_long_rounded,
-                color: Color(0xFF3815D8),
-                size: 20,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'Price & Fare Breakdown',
-                style: TextStyle(
-                  fontSize: 14.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF140D43),
-                ),
-              ),
-              const Spacer(),
-              // Rate badge
-              // _RateBadge(rateText: '₹$displayRate / km'),
-            ],
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 16),
+            child: Divider(height: 1, thickness: 1, color: Color(0xFFF0ECFC)),
           ),
           const SizedBox(height: 12),
 
-          // Total Distance row
-          _buildFareRow('Total Distance', '$displayDistance km'),
-          const SizedBox(height: 6),
-
-          // Estimated Duration row
-          _buildFareRow('Estimated Duration', displayDuration),
-          const SizedBox(height: 6),
-
-          // Seats Offered row
-          _buildFareRow(
-            'Seats Offered',
-            '$seats ${seats == 1 ? 'seat' : 'seats'}',
-          ),
-          const SizedBox(height: 6),
-
-          // // Rate per km row
-          // _buildFareRow('Rate per Kilometer', '₹$displayRate / km'),
-          // const SizedBox(height: 6),
-
-          // Price per seat row
-          _buildFareRow('Price per Seat', '₹$pricePerSeat '),
-          const SizedBox(height: 6),
-
-          // Calculation breakdown row: seat × distance × ratePerKm
-          _buildFareRow(
-            'Calculation ($seats seats × $displayDistance km × ₹$displayRate)',
-            '₹$totalPrice',
-          ),
-
-          const Divider(height: 16, thickness: 1, color: Color(0xFFE2DCF9)),
-
-          // Total Fare Highlight Row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'Total Price',
-                style: TextStyle(
-                  fontSize: 15.5,
-                  fontWeight: FontWeight.w800,
-                  color: Color(0xFF140D43),
+          // Line Items
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              children: [
+                _buildFareRowItem(
+                  title: 'Base Route Rate',
+                  subtitle: 'Calculated tariff per kilometer',
+                  value: '₹$displayRate / km',
                 ),
-              ),
-              Text(
-                '₹$totalPrice',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: Color(0xFF3815D8),
-                  letterSpacing: -0.5,
+                const SizedBox(height: 10),
+                _buildFareRowItem(
+                  title: 'Price per Seat',
+                  subtitle: 'Fare for 1 co-traveler seat',
+                  value: '₹$pricePerSeat',
+                  valueColor: const Color(0xFF3815D8),
+                  isBold: true,
                 ),
+                const SizedBox(height: 10),
+                _buildFareRowItem(
+                  title: 'Seats Offered',
+                  subtitle: 'Total passenger capacity booked',
+                  value: '$seats ${seats == 1 ? 'seat' : 'seats'}',
+                ),
+                const SizedBox(height: 10),
+                _buildFareRowItem(
+                  title: 'Total Price',
+                  subtitle: '$seats seats × ₹$pricePerSeat / seat',
+                  value: '₹$totalPrice',
+                  valueColor: const Color(0xFF140D43),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Grand Total Royal Purple Gradient Banner
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  Color(0xFF4C1CDD),
+                  Color(0xFF3815D8),
+                  Color(0xFF2E0DA3),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
-            ],
+              borderRadius: BorderRadius.vertical(bottom: Radius.circular(20)),
+              boxShadow: [
+                BoxShadow(
+                  color: Color(0x334C1CDD),
+                  blurRadius: 10,
+                  offset: Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.account_balance_wallet_rounded,
+                          color: Colors.white70,
+                          size: 15,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'TOTAL ESTIMATED RIDE PRICE',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white.withOpacity(0.85),
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      'For all $seats offered passenger seats combined',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withOpacity(0.72),
+                      ),
+                    ),
+                  ],
+                ),
+                Text(
+                  '₹$totalPrice',
+                  style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                    color: Colors.white,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildFareRow(String title, String value) {
+  // Widget _buildMetricMiniChip({
+  //   required IconData icon,
+  //   required String label,
+  //   required String value,
+  //   required Color iconColor,
+  // }) {
+  //   return Container(
+  //     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+  //     decoration: BoxDecoration(
+  //       color: const Color(0xFFF8F7FD),
+  //       borderRadius: BorderRadius.circular(12),
+  //       border: Border.all(color: const Color(0xFFEDE8FF)),
+  //     ),
+  //     child: Column(
+  //       crossAxisAlignment: CrossAxisAlignment.start,
+  //       children: [
+  //         Row(
+  //           children: [
+  //             Icon(icon, size: 14, color: iconColor),
+  //             const SizedBox(width: 4),
+  //             Flexible(
+  //               child: Text(
+  //                 label,
+  //                 overflow: TextOverflow.ellipsis,
+  //                 style: const TextStyle(
+  //                   fontSize: 10.5,
+  //                   fontWeight: FontWeight.w600,
+  //                   color: Color(0xFF6B658C),
+  //                 ),
+  //               ),
+  //             ),
+  //           ],
+  //         ),
+  //         const SizedBox(height: 4),
+  //         Text(
+  //           value,
+  //           maxLines: 1,
+  //           overflow: TextOverflow.ellipsis,
+  //           style: const TextStyle(
+  //             fontSize: 13,
+  //             fontWeight: FontWeight.w800,
+  //             color: Color(0xFF140D43),
+  //           ),
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
+
+  Widget _buildFareRowItem({
+    required String title,
+    required String subtitle,
+    required String value,
+    Color valueColor = const Color(0xFF140D43),
+    bool isBold = false,
+  }) {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 12.5,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF6B658C),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF140D43),
+                ),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF6B658C),
+                ),
+              ),
+            ],
           ),
         ),
         Text(
           value,
-          style: const TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF140D43),
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isBold ? FontWeight.w800 : FontWeight.w700,
+            color: valueColor,
           ),
         ),
       ],
@@ -1739,35 +2097,56 @@ class _RateBadge extends StatelessWidget {
   }
 }
 
-/// Stepper Button (+ / -)
-class _StepperBtn extends StatelessWidget {
+/// Modern circular tactile stepper button with interactive feedback
+class _ModernCircleStepperBtn extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final bool enabled;
 
-  const _StepperBtn({required this.icon, required this.onTap});
+  const _ModernCircleStepperBtn({
+    required this.icon,
+    required this.onTap,
+    this.enabled = true,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      behavior: HitTestBehavior.opaque,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: const Color(0xFFE2DCF9)),
-          boxShadow: [
-            BoxShadow(
-              color: const Color(0xFF5B3BF5).withOpacity(0.06),
-              blurRadius: 4,
-              offset: const Offset(0, 1),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(18),
+        splashColor: const Color(0xFF3815D8).withOpacity(0.15),
+        highlightColor: const Color(0xFF3815D8).withOpacity(0.08),
+        child: Container(
+          width: 36,
+          height: 36,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: enabled ? Colors.white : const Color(0xFFF1F0F7),
+            border: Border.all(
+              color: enabled
+                  ? const Color(0xFFDCD6F7)
+                  : const Color(0xFFE5E2F0),
+              width: 1.2,
             ),
-          ],
+            boxShadow: enabled
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF5B3BF5).withOpacity(0.08),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Icon(
+            icon,
+            size: 19,
+            color: enabled ? const Color(0xFF3815D8) : const Color(0xFFA19DB8),
+          ),
         ),
-        alignment: Alignment.center,
-        child: Icon(icon, size: 18, color: const Color(0xFF3815D8)),
       ),
     );
   }

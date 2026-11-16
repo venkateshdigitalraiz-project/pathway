@@ -208,7 +208,10 @@ class _AuthWelcomePageState extends State<AuthWelcomePage> {
               ),
             );
           }
-          if (state.status == AuthStatus.authenticated) {
+          if (state.status == AuthStatus.requireUserDetails ||
+              (state.status == AuthStatus.authenticated && state.isFirstTime)) {
+            context.go(AppRoutes.userDetails);
+          } else if (state.status == AuthStatus.authenticated) {
             context.go(AppRoutes.main);
           }
         },

@@ -17,6 +17,7 @@ class AuthLocalStorage {
   static const String keyRefreshExpiresAt = 'auth_refresh_expires_at';
   static const String keyUserJson = 'auth_user_json';
   static const String keyWholeAuthData = 'auth_whole_data';
+  static const String keyIsProfileCompleted = 'auth_profile_completed';
 
   SharedPreferences? _prefs;
 
@@ -231,10 +232,23 @@ class AuthLocalStorage {
             '',
         role: userMap['role']?.toString() ?? 'user',
         authProvider: userMap['authProvider']?.toString() ?? 'phone',
+        gender: userMap['gender']?.toString(),
+        reference: userMap['reference']?.toString() ?? userMap['referralCode']?.toString(),
       );
     } catch (_) {
       return null;
     }
+  }
+
+  /// Check if user has completed profile details
+  bool isProfileCompleted() {
+    return _prefs?.getBool(keyIsProfileCompleted) ?? false;
+  }
+
+  /// Mark profile as completed or incomplete
+  Future<void> setProfileCompleted(bool completed) async {
+    final sp = _prefs ?? await init();
+    await sp.setBool(keyIsProfileCompleted, completed);
   }
 
   /// Retrieve the whole data object stored during login
@@ -264,6 +278,7 @@ class AuthLocalStorage {
     await sp.remove(keyRefreshExpiresAt);
     await sp.remove(keyUserJson);
     await sp.remove(keyWholeAuthData);
+    await sp.remove(keyIsProfileCompleted);
     await sp.clear();
     debugPrint('\n==================== [LOCAL STORAGE: AUTH DATA CLEARED] ====================');
     debugPrint('All authentication keys and SharedPreferences have been wiped successfully.');

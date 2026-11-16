@@ -37,6 +37,8 @@ class CarpoolFromToSelector extends StatelessWidget {
   final bool showSwapButton;
   final String fromLabel;
   final String toLabel;
+  final String fromPlaceholder;
+  final String toPlaceholder;
   final String fromSearchTitle;
   final String toSearchTitle;
   final String apiKey;
@@ -53,6 +55,8 @@ class CarpoolFromToSelector extends StatelessWidget {
     this.showSwapButton = true,
     this.fromLabel = 'From',
     this.toLabel = 'To',
+    this.fromPlaceholder = 'Enter Pickup Location',
+    this.toPlaceholder = 'Enter Destination',
     this.fromSearchTitle = 'Search Pickup Location',
     this.toSearchTitle = 'Search Drop Location',
     this.apiKey = ApiEndpoints.googleMapsApiKey,
@@ -133,15 +137,17 @@ class CarpoolFromToSelector extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            from.trim().isNotEmpty ? from : 'Current Location',
+                            from.trim().isNotEmpty ? from : fromPlaceholder,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: from.trim().isNotEmpty
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
                               color: from.trim().isNotEmpty
                                   ? const Color(0xFF140D43)
-                                  : const Color(0xFF3815D8),
+                                  : const Color(0xFF9E9AB8),
                             ),
                           ),
                         ],
@@ -190,15 +196,17 @@ class CarpoolFromToSelector extends StatelessWidget {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            to.trim().isNotEmpty ? to : 'Enter Destination',
+                            to.trim().isNotEmpty ? to : toPlaceholder,
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: TextStyle(
                               fontSize: 16,
-                              fontWeight: FontWeight.w800,
+                              fontWeight: to.trim().isNotEmpty
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
                               color: to.trim().isNotEmpty
                                   ? const Color(0xFF140D43)
-                                  : const Color(0xFF9E98BE),
+                                  : const Color(0xFF9E9AB8),
                             ),
                           ),
                         ],
@@ -257,6 +265,8 @@ class CarpoolRouteSelectorCard extends StatelessWidget {
   final bool showSwapButton;
   final String fromLabel;
   final String toLabel;
+  final String fromPlaceholder;
+  final String toPlaceholder;
   final String fromSearchTitle;
   final String toSearchTitle;
   final String apiKey;
@@ -271,6 +281,8 @@ class CarpoolRouteSelectorCard extends StatelessWidget {
     this.showSwapButton = true,
     this.fromLabel = 'From',
     this.toLabel = 'To',
+    this.fromPlaceholder = 'Enter Pickup Location',
+    this.toPlaceholder = 'Enter Destination',
     this.fromSearchTitle = 'Search Pickup Location',
     this.toSearchTitle = 'Search Drop Location',
     this.apiKey = ApiEndpoints.googleMapsApiKey,
@@ -301,6 +313,8 @@ class CarpoolRouteSelectorCard extends StatelessWidget {
         showSwapButton: showSwapButton,
         fromLabel: fromLabel,
         toLabel: toLabel,
+        fromPlaceholder: fromPlaceholder,
+        toPlaceholder: toPlaceholder,
         fromSearchTitle: fromSearchTitle,
         toSearchTitle: toSearchTitle,
         apiKey: apiKey,

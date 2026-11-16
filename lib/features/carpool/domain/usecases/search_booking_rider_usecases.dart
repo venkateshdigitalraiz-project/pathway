@@ -44,8 +44,17 @@ class BookRiderSeatUseCase {
   Future<RiderBookingEntity> call({
     required CarpoolRideEntity ride,
     required int seats,
+    String? pickupPoint,
+    String? dropoffPoint,
+    String? passengerNotes,
   }) =>
-      repository.bookSeat(ride: ride, seats: seats);
+      repository.bookSeat(
+        ride: ride,
+        seats: seats,
+        pickupPoint: pickupPoint,
+        dropoffPoint: dropoffPoint,
+        passengerNotes: passengerNotes,
+      );
 }
 
 class CancelRiderBookingUseCase {

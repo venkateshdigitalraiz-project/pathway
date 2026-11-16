@@ -18,13 +18,14 @@ class RiderBookingModel extends RiderBookingEntity {
     required super.bookingDate,
     super.vehicleNumber,
     super.otpCode,
+    super.passengerNotes,
   });
 
   factory RiderBookingModel.fromJson(Map<String, dynamic> json) {
     // 1. Driver info
     String driverName = 'Driver';
-    String driverPhone = '+91 98765 43210';
-    double driverRating = 4.8;
+    String driverPhone = '';
+    double driverRating = 0.0;
     if (json['driver'] is Map<String, dynamic>) {
       final d = json['driver'] as Map<String, dynamic>;
       driverName = d['name']?.toString() ?? driverName;
@@ -66,19 +67,24 @@ class RiderBookingModel extends RiderBookingEntity {
     final seatsBooked = (json['seatsBooked'] as num?)?.toInt() ??
         (json['seats'] as num?)?.toInt() ??
         1;
-    final pricePerSeat = (json['pricePerSeat'] as num?)?.toInt() ??
-        (json['price'] as num?)?.toInt() ??
-        250;
     final totalAmount = (json['totalAmount'] as num?)?.toInt() ??
         (json['totalPrice'] as num?)?.toInt() ??
-        (seatsBooked * pricePerSeat);
+        (json['fare'] as num?)?.toInt() ??
+        0;
+    final pricePerSeat = (json['pricePerSeat'] as num?)?.toInt() ??
+        (json['price'] as num?)?.toInt() ??
+        (seatsBooked > 0 && totalAmount > 0
+            ? (totalAmount ~/ seatsBooked)
+            : 0);
 
     // 5. Vehicle
     final vehicle = json['vehicle']?.toString() ??
         json['vehicleModel']?.toString() ??
-        'Honda City';
-    final vehicleNumber = json['vehicleNumber']?.toString() ?? 'DL 01 AB 1234';
-    final otpCode = json['otpCode']?.toString() ?? '4821';
+        '';
+    final vehicleNumber = json['vehicleNumber']?.toString();
+    final otpCode = json['otpCode']?.toString() ?? json['otp']?.toString();
+    final passengerNotes = json['passengerNotes']?.toString() ??
+        json['notes']?.toString();
 
     // 6. Status
     RiderBookingStatus status = RiderBookingStatus.confirmed;
@@ -112,6 +118,7 @@ class RiderBookingModel extends RiderBookingEntity {
       bookingDate: bookingDate,
       vehicleNumber: vehicleNumber,
       otpCode: otpCode,
+      passengerNotes: passengerNotes,
     );
   }
 
@@ -132,11 +139,13 @@ class RiderBookingModel extends RiderBookingEntity {
         'bookingDate': bookingDate.toIso8601String(),
         'vehicleNumber': vehicleNumber,
         'otpCode': otpCode,
+        'passengerNotes': passengerNotes,
       };
 
   @override
   RiderBookingModel copyWith({
     RiderBookingStatus? status,
+    String? passengerNotes,
   }) {
     return RiderBookingModel(
       id: id,
@@ -155,6 +164,7 @@ class RiderBookingModel extends RiderBookingEntity {
       bookingDate: bookingDate,
       vehicleNumber: vehicleNumber,
       otpCode: otpCode,
+      passengerNotes: passengerNotes ?? this.passengerNotes,
     );
   }
 }

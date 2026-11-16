@@ -19,6 +19,9 @@ abstract class SearchBookingRiderRepository {
   Future<RiderBookingEntity> bookSeat({
     required CarpoolRideEntity ride,
     required int seats,
+    String? pickupPoint,
+    String? dropoffPoint,
+    String? passengerNotes,
   });
 
   Future<void> cancelBooking(String bookingId);

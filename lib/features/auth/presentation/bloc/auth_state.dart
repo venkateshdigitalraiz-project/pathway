@@ -5,6 +5,7 @@ enum AuthStatus {
   initial,
   unauthenticated,
   authenticated,
+  requireUserDetails,
   loading,
   error,
   otpVerified,

@@ -57,6 +57,8 @@ class AuthResponseModel {
             '')
         .trim();
     final role = userMap['role']?.toString() ?? 'user';
+    final gender = userMap['gender']?.toString();
+    final reference = userMap['reference']?.toString() ?? userMap['referralCode']?.toString();
 
     final user = UserProfile(
       id: id,
@@ -66,6 +68,8 @@ class AuthResponseModel {
       phoneNumber: phone,
       role: role,
       authProvider: 'phone',
+      gender: gender,
+      reference: reference,
     );
 
     return AuthResponseModel(

@@ -30,19 +30,16 @@ class CarpoolOfferRidePage extends StatelessWidget {
       return BlocProvider.value(value: bloc!, child: const _OfferRideView());
     }
 
-    try {
-      final existing = context.read<CarpoolOfferRideBloc>();
-      return BlocProvider.value(value: existing, child: const _OfferRideView());
-    } catch (_) {
-      final remoteDataSource = CarpoolMockDataSource();
-      final repository = CarpoolRepositoryImpl(remoteDataSource);
-      final publishRideUseCase = CarpoolPublishRideUseCase(repository);
+    // Always create a fresh CarpoolOfferRideBloc so that no stale / static data
+    // is preserved across visits to this page.
+    final remoteDataSource = CarpoolMockDataSource();
+    final repository = CarpoolRepositoryImpl(remoteDataSource);
+    final publishRideUseCase = CarpoolPublishRideUseCase(repository);
 
-      return BlocProvider(
-        create: (_) => CarpoolOfferRideBloc(publishRide: publishRideUseCase),
-        child: const _OfferRideView(),
-      );
-    }
+    return BlocProvider(
+      create: (_) => CarpoolOfferRideBloc(publishRide: publishRideUseCase),
+      child: const _OfferRideView(),
+    );
   }
 }
 
@@ -107,8 +104,28 @@ Future<String?> carpoolAskText(
   );
 }
 
-class _OfferRideView extends StatelessWidget {
+class _OfferRideView extends StatefulWidget {
   const _OfferRideView();
+
+  @override
+  State<_OfferRideView> createState() => _OfferRideViewState();
+}
+
+class _OfferRideViewState extends State<_OfferRideView> {
+  bool _hasSelectedDate = false;
+  bool _hasSelectedTime = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        final bloc = context.read<CarpoolOfferRideBloc>();
+        bloc.add(const CarpoolOfferResetStatus());
+        bloc.add(const CarpoolOfferClearRoute());
+      }
+    });
+  }
 
   String _extractCity(String location) {
     var raw = location.trim();
@@ -154,9 +171,12 @@ class _OfferRideView extends StatelessWidget {
 
   Future<void> _pickDate(BuildContext context, CarpoolOfferRideState s) async {
     final now = DateTime.now();
+    final initialDate = _hasSelectedDate
+        ? (s.departure.isBefore(now) ? now : s.departure)
+        : now;
     final picked = await showDatePicker(
       context: context,
-      initialDate: s.departure.isBefore(now) ? now : s.departure,
+      initialDate: initialDate,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: now.add(const Duration(days: 180)),
       builder: (context, child) {
@@ -172,18 +192,23 @@ class _OfferRideView extends StatelessWidget {
         );
       },
     );
-    if (picked != null && context.mounted) {
+    if (picked != null && mounted) {
       context.read<CarpoolOfferRideBloc>().add(CarpoolOfferDateChanged(picked));
+      setState(() => _hasSelectedDate = true);
     }
   }
 
   Future<void> _pickTime(BuildContext context, CarpoolOfferRideState s) async {
+    final nowTime = TimeOfDay.now();
+    final initialTime = _hasSelectedTime
+        ? TimeOfDay(
+            hour: s.departure.hour,
+            minute: s.departure.minute,
+          )
+        : nowTime;
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(
-        hour: s.departure.hour,
-        minute: s.departure.minute,
-      ),
+      initialTime: initialTime,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -197,10 +222,11 @@ class _OfferRideView extends StatelessWidget {
         );
       },
     );
-    if (picked != null && context.mounted) {
+    if (picked != null && mounted) {
       context.read<CarpoolOfferRideBloc>().add(
         CarpoolOfferTimeChanged(picked.hour, picked.minute),
       );
+      setState(() => _hasSelectedTime = true);
     }
   }
 
@@ -412,6 +438,8 @@ class _OfferRideView extends StatelessWidget {
                                 CarpoolFromToSelector(
                                   from: s.from,
                                   to: s.to,
+                                  fromPlaceholder: 'Enter Pickup Location',
+                                  toPlaceholder: 'Enter Destination',
                                   onFromChanged: (v) =>
                                       bloc.add(CarpoolOfferFromChanged(v)),
                                   onToChanged: (v) =>
@@ -474,13 +502,19 @@ class _OfferRideView extends StatelessWidget {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                CarpoolFormatters.date(
-                                                  s.departure,
-                                                ),
-                                                style: const TextStyle(
+                                                _hasSelectedDate
+                                                    ? CarpoolFormatters.date(
+                                                        s.departure,
+                                                      )
+                                                    : 'Select Date',
+                                                style: TextStyle(
                                                   fontSize: 15,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Color(0xFF140D43),
+                                                  fontWeight: _hasSelectedDate
+                                                      ? FontWeight.w800
+                                                      : FontWeight.w600,
+                                                  color: _hasSelectedDate
+                                                      ? const Color(0xFF140D43)
+                                                      : const Color(0xFF9E9AB8),
                                                 ),
                                               ),
                                             ],
@@ -534,13 +568,19 @@ class _OfferRideView extends StatelessWidget {
                                               ),
                                               const SizedBox(height: 2),
                                               Text(
-                                                CarpoolFormatters.time(
-                                                  s.departure,
-                                                ),
-                                                style: const TextStyle(
+                                                _hasSelectedTime
+                                                    ? CarpoolFormatters.time(
+                                                        s.departure,
+                                                      )
+                                                    : 'Select Time',
+                                                style: TextStyle(
                                                   fontSize: 15,
-                                                  fontWeight: FontWeight.w800,
-                                                  color: Color(0xFF140D43),
+                                                  fontWeight: _hasSelectedTime
+                                                      ? FontWeight.w800
+                                                      : FontWeight.w600,
+                                                  color: _hasSelectedTime
+                                                      ? const Color(0xFF140D43)
+                                                      : const Color(0xFF9E9AB8),
                                                 ),
                                               ),
                                             ],
@@ -809,12 +849,55 @@ class _OfferRideView extends StatelessWidget {
                               child: InkWell(
                                 borderRadius: BorderRadius.circular(27),
                                 onTap: () {
-                                  if (!s.isValid) {
+                                  if (s.from.trim().isEmpty ||
+                                      s.to.trim().isEmpty) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text(
-                                          'Enter two different locations to continue',
+                                          'Please enter pickup and destination locations',
                                         ),
+                                        backgroundColor: Color(0xFF3815D8),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  if (s.from.trim().toLowerCase() ==
+                                      s.to.trim().toLowerCase()) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Pick-up and drop-off locations cannot be the same',
+                                        ),
+                                        backgroundColor: Color(0xFFE53935),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  if (!_hasSelectedDate) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please select a date for the ride',
+                                        ),
+                                        backgroundColor: Color(0xFF3815D8),
+                                        behavior: SnackBarBehavior.floating,
+                                      ),
+                                    );
+                                    return;
+                                  }
+
+                                  if (!_hasSelectedTime) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Please select a departure time for the ride',
+                                        ),
+                                        backgroundColor: Color(0xFF3815D8),
+                                        behavior: SnackBarBehavior.floating,
                                       ),
                                     );
                                     return;

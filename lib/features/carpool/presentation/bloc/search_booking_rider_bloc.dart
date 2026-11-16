@@ -62,14 +62,30 @@ class SearchBookingRiderSearchRequested extends SearchBookingRiderEvent {
 class SearchBookingRiderBookSeatRequested extends SearchBookingRiderEvent {
   final CarpoolRideEntity ride;
   final int seats;
+  final String? pickupPoint;
+  final String? dropoffPoint;
+  final String? passengerNotes;
 
   const SearchBookingRiderBookSeatRequested({
     required this.ride,
     this.seats = 1,
+    this.pickupPoint,
+    this.dropoffPoint,
+    this.passengerNotes,
   });
 
   @override
-  List<Object?> get props => [ride, seats];
+  List<Object?> get props => [
+    ride,
+    seats,
+    pickupPoint,
+    dropoffPoint,
+    passengerNotes,
+  ];
+}
+
+class SearchBookingRiderClearLastBooking extends SearchBookingRiderEvent {
+  const SearchBookingRiderClearLastBooking();
 }
 
 class SearchBookingRiderCancelBookingRequested extends SearchBookingRiderEvent {
@@ -89,6 +105,8 @@ class SearchBookingRiderState extends Equatable {
   final DateTime? date;
   final int seats;
   final String? message;
+  final String? bookingRideId;
+  final RiderBookingEntity? lastBookedBooking;
 
   const SearchBookingRiderState({
     this.status = CarpoolStatus.initial,
@@ -100,6 +118,8 @@ class SearchBookingRiderState extends Equatable {
     this.date,
     this.seats = 1,
     this.message,
+    this.bookingRideId,
+    this.lastBookedBooking,
   });
 
   List<RiderBookingEntity> get activeBookings =>
@@ -121,6 +141,10 @@ class SearchBookingRiderState extends Equatable {
     DateTime? date,
     int? seats,
     String? message,
+    String? bookingRideId,
+    bool clearBookingRideId = false,
+    RiderBookingEntity? lastBookedBooking,
+    bool clearLastBookedBooking = false,
   }) {
     return SearchBookingRiderState(
       status: status ?? this.status,
@@ -132,6 +156,12 @@ class SearchBookingRiderState extends Equatable {
       date: date ?? this.date,
       seats: seats ?? this.seats,
       message: message,
+      bookingRideId: clearBookingRideId
+          ? null
+          : (bookingRideId ?? this.bookingRideId),
+      lastBookedBooking: clearLastBookedBooking
+          ? null
+          : (lastBookedBooking ?? this.lastBookedBooking),
     );
   }
 
@@ -146,6 +176,8 @@ class SearchBookingRiderState extends Equatable {
     date,
     seats,
     message,
+    bookingRideId,
+    lastBookedBooking,
   ];
 }
 
@@ -168,6 +200,9 @@ class SearchBookingRiderBloc
     );
     on<SearchBookingRiderSearchRequested>(_onSearch);
     on<SearchBookingRiderBookSeatRequested>(_onBookSeat);
+    on<SearchBookingRiderClearLastBooking>(
+      (e, emit) => emit(state.copyWith(clearLastBookedBooking: true)),
+    );
     on<SearchBookingRiderCancelBookingRequested>(_onCancelBooking);
   }
 
@@ -246,23 +281,36 @@ class SearchBookingRiderBloc
     SearchBookingRiderBookSeatRequested event,
     Emitter<SearchBookingRiderState> emit,
   ) async {
-    emit(state.copyWith(status: CarpoolStatus.loading));
+    // Only the specific ride being booked shows loading
+    emit(
+      state.copyWith(
+        bookingRideId: event.ride.id,
+        clearLastBookedBooking: true,
+      ),
+    );
     try {
-      final newBooking = await bookSeat(ride: event.ride, seats: event.seats);
+      final newBooking = await bookSeat(
+        ride: event.ride,
+        seats: event.seats,
+        pickupPoint: event.pickupPoint,
+        dropoffPoint: event.dropoffPoint,
+        passengerNotes: event.passengerNotes,
+      );
       final updatedBookings = [newBooking, ...state.bookings];
       emit(
         state.copyWith(
-          status: CarpoolStatus.success,
+          clearBookingRideId: true,
+          lastBookedBooking: newBooking,
           bookings: updatedBookings,
-          tabIndex: 0, // Switch to My Bookings tab
           message: 'Ride booked successfully with ${event.ride.driverName}!',
         ),
       );
     } catch (e) {
       emit(
         state.copyWith(
-          status: CarpoolStatus.failure,
-          message: 'Booking failed: $e',
+          clearBookingRideId: true,
+          message:
+              'Booking failed: ${e.toString().replaceAll('Exception: ', '')}',
         ),
       );
     }

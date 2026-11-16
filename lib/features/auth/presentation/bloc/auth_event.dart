@@ -93,6 +93,23 @@ class SaveProfileNameEvent extends AuthEvent {
   List<Object?> get props => [firstName, lastName];
 }
 
+class SaveUserDetailsEvent extends AuthEvent {
+  final String fullName;
+  final String email;
+  final String? reference;
+  final String gender;
+
+  const SaveUserDetailsEvent({
+    required this.fullName,
+    required this.email,
+    this.reference,
+    required this.gender,
+  });
+
+  @override
+  List<Object?> get props => [fullName, email, reference, gender];
+}
+
 class ContinueAsGuestEvent extends AuthEvent {}
 
 class SaveHolidayPreferencesEvent extends AuthEvent {

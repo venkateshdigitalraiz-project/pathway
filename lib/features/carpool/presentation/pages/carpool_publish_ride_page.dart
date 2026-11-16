@@ -25,24 +25,12 @@ class CarpoolPublishRidePage extends StatelessWidget {
 
   /// Navigates to [CarpoolPublishRidePage] safely on the root navigator.
   static Future<void> show(BuildContext context, [CarpoolOfferRideBloc? bloc]) {
-    final b =
-        bloc ??
-        () {
-          try {
-            return context.read<CarpoolOfferRideBloc>();
-          } catch (_) {
-            return null;
-          }
-        }();
-
-    b?.add(const CarpoolOfferClearRoute());
-
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => b != null
+        builder: (_) => bloc != null
             ? BlocProvider.value(
-                value: b,
-                child: CarpoolPublishRidePage(bloc: b),
+                value: bloc,
+                child: CarpoolPublishRidePage(bloc: bloc),
               )
             : const CarpoolPublishRidePage(),
       ),
@@ -55,19 +43,16 @@ class CarpoolPublishRidePage extends StatelessWidget {
       return BlocProvider.value(value: bloc!, child: const _PublishRideView());
     }
 
-    try {
-      context.read<CarpoolOfferRideBloc>();
-      return const _PublishRideView();
-    } catch (_) {
-      final remoteDataSource = CarpoolMockDataSource();
-      final repository = CarpoolRepositoryImpl(remoteDataSource);
-      return BlocProvider(
-        create: (_) => CarpoolOfferRideBloc(
-          publishRide: CarpoolPublishRideUseCase(repository),
-        ),
-        child: const _PublishRideView(),
-      );
-    }
+    // Always create a fresh CarpoolOfferRideBloc so that no stale / static data
+    // is preserved across visits to this page.
+    final remoteDataSource = CarpoolMockDataSource();
+    final repository = CarpoolRepositoryImpl(remoteDataSource);
+    return BlocProvider(
+      create: (_) => CarpoolOfferRideBloc(
+        publishRide: CarpoolPublishRideUseCase(repository),
+      ),
+      child: const _PublishRideView(),
+    );
   }
 }
 
@@ -81,6 +66,8 @@ class _PublishRideView extends StatefulWidget {
 class _PublishRideViewState extends State<_PublishRideView> {
   bool _isNavigating = false;
   bool _hasSelectedRoute = false;
+  bool _hasSelectedDate = false;
+  bool _hasSelectedTime = false;
 
   @override
   void initState() {
@@ -131,6 +118,28 @@ class _PublishRideViewState extends State<_PublishRideView> {
         ),
       );
       CarpoolSelectRoutePage.show(context, bloc);
+      return;
+    }
+
+    if (!_hasSelectedDate) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a date for the ride'),
+          backgroundColor: Color(0xFF3815D8),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
+
+    if (!_hasSelectedTime) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Please select a departure time for the ride'),
+          backgroundColor: Color(0xFF3815D8),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
       return;
     }
 
@@ -191,9 +200,12 @@ class _PublishRideViewState extends State<_PublishRideView> {
 
   Future<void> _pickDate(BuildContext context, CarpoolOfferRideState s) async {
     final now = DateTime.now();
+    final initialDate = _hasSelectedDate
+        ? (s.departure.isBefore(now) ? now : s.departure)
+        : now;
     final picked = await showDatePicker(
       context: context,
-      initialDate: s.departure.isBefore(now) ? now : s.departure,
+      initialDate: initialDate,
       firstDate: DateTime(now.year, now.month, now.day),
       lastDate: now.add(const Duration(days: 180)),
       builder: (context, child) {
@@ -209,18 +221,23 @@ class _PublishRideViewState extends State<_PublishRideView> {
         );
       },
     );
-    if (picked != null && context.mounted) {
+    if (picked != null && mounted) {
       context.read<CarpoolOfferRideBloc>().add(CarpoolOfferDateChanged(picked));
+      setState(() => _hasSelectedDate = true);
     }
   }
 
   Future<void> _pickTime(BuildContext context, CarpoolOfferRideState s) async {
+    final nowTime = TimeOfDay.now();
+    final initialTime = _hasSelectedTime
+        ? TimeOfDay(
+            hour: s.departure.hour,
+            minute: s.departure.minute,
+          )
+        : nowTime;
     final picked = await showTimePicker(
       context: context,
-      initialTime: TimeOfDay(
-        hour: s.departure.hour,
-        minute: s.departure.minute,
-      ),
+      initialTime: initialTime,
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -234,10 +251,11 @@ class _PublishRideViewState extends State<_PublishRideView> {
         );
       },
     );
-    if (picked != null && context.mounted) {
+    if (picked != null && mounted) {
       context.read<CarpoolOfferRideBloc>().add(
         CarpoolOfferTimeChanged(picked.hour, picked.minute),
       );
+      setState(() => _hasSelectedTime = true);
     }
   }
 
@@ -389,8 +407,13 @@ class _PublishRideViewState extends State<_PublishRideView> {
                                 // Date Row
                                 _CardInfoRow(
                                   icon: Icons.calendar_month_rounded,
-                                  title: isToday ? 'Today' : 'Date',
-                                  subtitle: CarpoolFormatters.date(s.departure),
+                                  title: _hasSelectedDate && isToday
+                                      ? 'Today'
+                                      : 'Date',
+                                  subtitle: _hasSelectedDate
+                                      ? CarpoolFormatters.date(s.departure)
+                                      : 'Select Date',
+                                  isPlaceholder: !_hasSelectedDate,
                                   onTap: () => _pickDate(context, s),
                                 ),
 
@@ -400,7 +423,10 @@ class _PublishRideViewState extends State<_PublishRideView> {
                                 _CardInfoRow(
                                   icon: Icons.access_time_rounded,
                                   title: 'Time',
-                                  subtitle: CarpoolFormatters.time(s.departure),
+                                  subtitle: _hasSelectedTime
+                                      ? CarpoolFormatters.time(s.departure)
+                                      : 'Select Time',
+                                  isPlaceholder: !_hasSelectedTime,
                                   onTap: () => _pickTime(context, s),
                                 ),
 

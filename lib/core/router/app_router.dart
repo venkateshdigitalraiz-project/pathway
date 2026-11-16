@@ -8,6 +8,7 @@ import '../../features/auth/presentation/bloc/auth_state.dart';
 import '../../features/auth/presentation/pages/auth_register_page.dart';
 import '../../features/auth/presentation/pages/auth_welcome_page.dart';
 import '../../features/auth/presentation/pages/name_input_page.dart';
+import '../../features/auth/presentation/pages/user_details_page.dart';
 import '../../features/carpool/presentation/pages/carpool_shell_page.dart';
 import '../../features/dashboard/presentation/pages/dashboard_shell_page.dart';
 import '../../features/party_booking/presentation/pages/party_shell_page.dart';
@@ -19,6 +20,7 @@ class AppRoutes {
   static const String welcome = '/welcome';
   static const String register = '/register';
   static const String nameInput = '/name-input';
+  static const String userDetails = '/user-details';
   static const String carpool = '/carpool';
   static const String party = '/party';
   static const String tours = '/tours';
@@ -62,6 +64,12 @@ class AppRouter {
       refreshListenable: GoRouterRefreshStream(authBloc.stream),
       redirect: (BuildContext context, GoRouterState state) {
         final authState = authBloc.state;
+        final bool isFirstTimeNeedsDetails =
+            authState.status == AuthStatus.requireUserDetails ||
+            (authState.isFirstTime &&
+                authState.user != null &&
+                !AuthLocalStorage().isProfileCompleted());
+
         final bool isAuthenticated =
             (authState.status == AuthStatus.authenticated &&
                 authState.user != null) ||
@@ -70,7 +78,16 @@ class AppRouter {
 
         final bool isAuthRoute = location == AppRoutes.welcome ||
             location == AppRoutes.register ||
-            location == AppRoutes.nameInput;
+            location == AppRoutes.nameInput ||
+            location == AppRoutes.userDetails;
+
+        // If user is required to complete profile details on first-time login
+        if (isFirstTimeNeedsDetails) {
+          if (location != AppRoutes.userDetails) {
+            return AppRoutes.userDetails;
+          }
+          return null;
+        }
 
         // If not authenticated, ensure user stays on auth pages
         if (!isAuthenticated) {
@@ -112,6 +129,11 @@ class AppRouter {
               phoneNumber: phoneNumber,
             );
           },
+        ),
+        GoRoute(
+          path: AppRoutes.userDetails,
+          name: 'user-details',
+          builder: (context, state) => const UserDetailsPage(),
         ),
         GoRoute(
           path: AppRoutes.main,

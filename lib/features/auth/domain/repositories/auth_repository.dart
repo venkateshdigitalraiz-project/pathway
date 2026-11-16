@@ -28,6 +28,12 @@ abstract class AuthRepository {
     required String firstName,
     required String lastName,
   });
+  Future<UserProfile> saveUserDetails({
+    required String fullName,
+    required String email,
+    String? reference,
+    required String gender,
+  });
   Future<UserProfile> continueAsGuest();
   Future<void> updateSurveyPreferences({
     List<String>? holidayWith,

@@ -7,6 +7,7 @@ import '../bloc/carpool_nav_cubit.dart';
 import '../bloc/carpool_profile_bloc.dart';
 import 'carpool_settings_page.dart';
 import 'carpool_wallet_page.dart';
+import 'my_ride_booking_page.dart';
 import 'search_booking_rider_page.dart';
 
 /// CarpoolProfilePage - Matches exact design specifications:
@@ -93,8 +94,8 @@ class CarpoolProfilePage extends StatelessWidget {
       ),
       _ProfileMenuItem(
         icon: Icons.directions_car_rounded,
-        label: 'My Rides',
-        onTap: () => SearchBookingRiderPage.show(context),
+        label: 'My Ride Booking',
+        onTap: () => MyRideBookingPage.show(context),
       ),
       _ProfileMenuItem(
         icon: Icons.account_balance_wallet_rounded,

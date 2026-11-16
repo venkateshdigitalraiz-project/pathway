@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pathway/core/theme/app_typography.dart';
-import 'package:pathway/core/widgets/custom_button.dart';
 
 import 'package:pathway/core/party_injector.dart';
 import 'package:pathway/core/theme/party_theme.dart';
@@ -33,8 +32,9 @@ class PartyBookingPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => PartyInjector.I.bookingFormBloc(venue)
-        ..add(const PartyBookingFormStarted()),
+      create: (_) =>
+          PartyInjector.I.bookingFormBloc(venue)
+            ..add(const PartyBookingFormStarted()),
       child: const _BookingView(),
     );
   }
@@ -52,10 +52,13 @@ class _BookingView extends StatelessWidget {
       listener: (context, s) {
         if (s.status == PartyStatus.success && s.booking != null) {
           PartyNavigator.replace(
-              context, PartyBookingConfirmedPage(booking: s.booking!));
+            context,
+            PartyBookingConfirmedPage(booking: s.booking!),
+          );
         } else if (s.error != null) {
-          ScaffoldMessenger.of(context)
-              .showSnackBar(SnackBar(content: Text(s.error!)));
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text(s.error!)));
         }
       },
       builder: (context, s) {
@@ -167,17 +170,17 @@ class _Label extends StatelessWidget {
   final String text;
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: Text(
-          text,
-          style: const TextStyle(
-            color: Color(0xFF140D43),
-            fontWeight: FontWeight.w800,
-            fontSize: 17,
-            letterSpacing: -0.2,
-          ),
-        ),
-      );
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Text(
+      text,
+      style: const TextStyle(
+        color: Color(0xFF140D43),
+        fontWeight: FontWeight.w800,
+        fontSize: 17,
+        letterSpacing: -0.2,
+      ),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------- step 1
@@ -209,10 +212,7 @@ class _DateTimeStep extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: const Color(0xFFE2E8F0),
-                width: 1.2,
-              ),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
             ),
             child: Row(
               children: [
@@ -275,8 +275,9 @@ class _DateTimeStep extends StatelessWidget {
                           boxShadow: slot == state.slot
                               ? [
                                   BoxShadow(
-                                    color: const Color(0xFF4C1CDD)
-                                        .withOpacity(0.35),
+                                    color: const Color(
+                                      0xFF4C1CDD,
+                                    ).withOpacity(0.35),
                                     blurRadius: 8,
                                     offset: const Offset(0, 3),
                                   ),
@@ -308,10 +309,7 @@ class _DateTimeStep extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: const Color(0xFFE2E8F0),
-                width: 1.2,
-              ),
+              border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
             ),
             child: Row(
               children: [
@@ -361,14 +359,14 @@ class _StepButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => GestureDetector(
-        onTap: onTap,
-        child: Container(
-          width: 64,
-          height: 52,
-          alignment: Alignment.center,
-          child: Icon(icon, size: 24, color: const Color(0xFF140D43)),
-        ),
-      );
+    onTap: onTap,
+    child: Container(
+      width: 64,
+      height: 52,
+      alignment: Alignment.center,
+      child: Icon(icon, size: 24, color: const Color(0xFF140D43)),
+    ),
+  );
 }
 
 // ---------------------------------------------------------------- step 2
@@ -381,12 +379,15 @@ class _DetailsStep extends StatefulWidget {
 }
 
 class _DetailsStepState extends State<_DetailsStep> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.state.name);
-  late final TextEditingController _phone =
-      TextEditingController(text: widget.state.phone);
-  late final TextEditingController _notes =
-      TextEditingController(text: widget.state.notes);
+  late final TextEditingController _name = TextEditingController(
+    text: widget.state.name,
+  );
+  late final TextEditingController _phone = TextEditingController(
+    text: widget.state.phone,
+  );
+  late final TextEditingController _notes = TextEditingController(
+    text: widget.state.notes,
+  );
 
   @override
   void dispose() {
@@ -473,15 +474,22 @@ class _PaymentStep extends StatelessWidget {
           ),
           child: Column(
             children: [
-              _SummaryRow('Venue charges', PartyFormatters.rupee(state.totalAmount)),
-              const SizedBox(height: 8),
-              _SummaryRow('Pay now (20% advance)',
-                  PartyFormatters.rupee(state.advanceAmount),
-                  bold: true, color: PartyColors.primary),
+              _SummaryRow(
+                'Venue charges',
+                PartyFormatters.rupee(state.totalAmount),
+              ),
               const SizedBox(height: 8),
               _SummaryRow(
-                  'Balance at venue',
-                  PartyFormatters.rupee(state.totalAmount - state.advanceAmount)),
+                'Pay now (20% advance)',
+                PartyFormatters.rupee(state.advanceAmount),
+                bold: true,
+                color: PartyColors.primary,
+              ),
+              const SizedBox(height: 8),
+              _SummaryRow(
+                'Balance at venue',
+                PartyFormatters.rupee(state.totalAmount - state.advanceAmount),
+              ),
             ],
           ),
         ),
@@ -495,9 +503,7 @@ class _PaymentStep extends StatelessWidget {
               child: Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: state.payment == m
-                      ? PartyColors.chip
-                      : Colors.white,
+                  color: state.payment == m ? PartyColors.chip : Colors.white,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: state.payment == m
@@ -511,9 +517,12 @@ class _PaymentStep extends StatelessWidget {
                     Icon(_icon(m), color: PartyColors.primary),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Text(partyPaymentLabel(m),
-                          style: AppTypography.bodyLarge
-                              .copyWith(fontWeight: FontWeight.w600)),
+                      child: Text(
+                        partyPaymentLabel(m),
+                        style: AppTypography.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                     Icon(
                       state.payment == m
@@ -542,19 +551,26 @@ class _SummaryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Row(
-        children: [
-          Expanded(
-            child: Text(label,
-                style: AppTypography.bodyMedium.copyWith(
-                    fontSize: 14,
-                    color: PartyColors.text,
-                    fontWeight: bold ? FontWeight.w700 : FontWeight.w500)),
+    children: [
+      Expanded(
+        child: Text(
+          label,
+          style: AppTypography.bodyMedium.copyWith(
+            fontSize: 14,
+            color: PartyColors.text,
+            fontWeight: bold ? FontWeight.w700 : FontWeight.w500,
           ),
-          Text(value,
-              style: AppTypography.bodyLarge.copyWith(
-                  fontWeight: FontWeight.w800, color: color ?? PartyColors.text)),
-        ],
-      );
+        ),
+      ),
+      Text(
+        value,
+        style: AppTypography.bodyLarge.copyWith(
+          fontWeight: FontWeight.w800,
+          color: color ?? PartyColors.text,
+        ),
+      ),
+    ],
+  );
 }
 
 // ---------------------------------------------------------------- step 4
@@ -574,7 +590,7 @@ class _ConfirmStep extends StatelessWidget {
       if (state.notes.trim().isNotEmpty) ['Requests', state.notes.trim()],
       [
         'Payment',
-        state.payment == null ? '-' : partyPaymentLabel(state.payment!)
+        state.payment == null ? '-' : partyPaymentLabel(state.payment!),
       ],
     ];
     return Column(
@@ -595,13 +611,21 @@ class _ConfirmStep extends StatelessWidget {
                   children: [
                     SizedBox(
                       width: 84,
-                      child: Text(rows[i][0],
-                          style: AppTypography.bodyMedium.copyWith(fontSize: 13.5)),
+                      child: Text(
+                        rows[i][0],
+                        style: AppTypography.bodyMedium.copyWith(
+                          fontSize: 13.5,
+                        ),
+                      ),
                     ),
                     Expanded(
-                      child: Text(rows[i][1],
-                          style: AppTypography.bodyLarge
-                              .copyWith(fontWeight: FontWeight.w700, fontSize: 14)),
+                      child: Text(
+                        rows[i][1],
+                        style: AppTypography.bodyLarge.copyWith(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 14,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -611,21 +635,29 @@ class _ConfirmStep extends StatelessWidget {
               Row(
                 children: [
                   Expanded(
-                    child: Text('Pay now',
-                        style: AppTypography.bodyLarge
-                            .copyWith(fontWeight: FontWeight.w700)),
+                    child: Text(
+                      'Pay now',
+                      style: AppTypography.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ),
-                  Text(PartyFormatters.rupee(state.advanceAmount),
-                      style: AppTypography.titleLarge
-                          .copyWith(color: PartyColors.primary)),
+                  Text(
+                    PartyFormatters.rupee(state.advanceAmount),
+                    style: AppTypography.titleLarge.copyWith(
+                      color: PartyColors.primary,
+                    ),
+                  ),
                 ],
               ),
             ],
           ),
         ),
         const SizedBox(height: 12),
-        Text('Your booking is confirmed instantly. The balance is payable at the venue.',
-            style: AppTypography.bodySmall.copyWith(fontSize: 12.5)),
+        Text(
+          'Your booking is confirmed instantly. The balance is payable at the venue.',
+          style: AppTypography.bodySmall.copyWith(fontSize: 12.5),
+        ),
       ],
     );
   }

@@ -90,16 +90,12 @@ class _CarpoolHomeView extends StatelessWidget {
   void _openOfferRide(BuildContext context) {
     CarpoolHomeBloc? homeBloc;
     CarpoolNavCubit? navCubit;
-    CarpoolOfferRideBloc? offerBloc;
 
     try {
       homeBloc = context.read<CarpoolHomeBloc>();
     } catch (_) {}
     try {
       navCubit = context.read<CarpoolNavCubit>();
-    } catch (_) {}
-    try {
-      offerBloc = context.read<CarpoolOfferRideBloc>();
     } catch (_) {}
 
     Navigator.of(context).push(
@@ -108,7 +104,6 @@ class _CarpoolHomeView extends StatelessWidget {
           providers: [
             if (homeBloc != null) BlocProvider.value(value: homeBloc),
             if (navCubit != null) BlocProvider.value(value: navCubit),
-            if (offerBloc != null) BlocProvider.value(value: offerBloc),
           ],
           child: const CarpoolOfferRidePage(),
         ),
