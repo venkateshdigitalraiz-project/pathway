@@ -2,6 +2,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../../../core/storage/auth_local_storage.dart';
+import '../../../../core/socket/socket.dart';
 import '../../domain/usecases/continue_as_guest_usecase.dart';
 import '../../domain/usecases/get_current_user_usecase.dart';
 import '../../domain/usecases/get_user_profile_usecase.dart';
@@ -117,17 +118,20 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     Emitter<AuthState> emit,
   ) async {
     final user = await getCurrentUserUseCase();
+    final storage = AuthLocalStorage();
+    final bool hasProfile = storage.isProfileCompleted();
     if (user != null) {
+      SocketService().connect();
       emit(state.copyWith(
         status: AuthStatus.authenticated,
         user: user,
         isFirstTime: false,
       ));
     } else {
-      emit(const AuthState(
+      emit(AuthState(
         status: AuthStatus.unauthenticated,
         user: null,
-        isFirstTime: true,
+        isFirstTime: !hasProfile,
       ));
     }
   }
@@ -229,29 +233,57 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         otp: event.otp,
       );
 
-      final bool isProfileDone = AuthLocalStorage().isProfileCompleted();
-      final bool isFirstTime = !isProfileDone ||
-          user.firstName.isEmpty ||
-          user.firstName.trim().toLowerCase() == 'user' ||
-          user.email.isEmpty;
+      final storage = AuthLocalStorage();
+      final savedFullName = storage.getFullName(event.phoneNumber)?.trim() ?? '';
+      final serverFullName = user.fullName.trim();
 
-      if (isFirstTime) {
+      final effectiveFullName = (savedFullName.isNotEmpty &&
+              !savedFullName.toLowerCase().startsWith('user'))
+          ? savedFullName
+          : serverFullName;
+
+      final bool hasValidFullName = effectiveFullName.isNotEmpty &&
+          effectiveFullName.toLowerCase() != 'user' &&
+          !effectiveFullName.toLowerCase().startsWith('user ') &&
+          !RegExp(r'^user[\s_-]*\d*$', caseSensitive: false)
+              .hasMatch(effectiveFullName);
+
+      final bool isProfileDone =
+          storage.isProfileCompleted(event.phoneNumber) && hasValidFullName;
+
+      if (isProfileDone) {
+        final resolvedName = hasValidFullName
+            ? effectiveFullName
+            : (savedFullName.isNotEmpty ? savedFullName : user.fullName);
+        final parts = resolvedName.split(' ');
+        final completedUser = user.copyWith(
+          firstName: parts.isNotEmpty ? parts.first : 'User',
+          lastName: parts.length > 1 ? parts.sublist(1).join(' ') : '',
+          email: user.email.isNotEmpty
+              ? user.email
+              : (storage.getEmail(event.phoneNumber) ?? ''),
+          gender: user.gender ?? storage.getGender(event.phoneNumber),
+          reference: user.reference ?? storage.getReference(event.phoneNumber),
+        );
+        await storage.saveUserProfile(completedUser, phone: event.phoneNumber);
+        SocketService().connect();
+
+        emit(state.copyWith(
+          status: AuthStatus.authenticated,
+          user: completedUser,
+          phoneNumber: event.phoneNumber,
+          isFirstTime: false,
+          isOtpSent: false,
+          successMessage: 'Welcome to Pathway, ${completedUser.firstName}!',
+          errorMessage: null,
+        ));
+      } else {
         emit(state.copyWith(
           status: AuthStatus.requireUserDetails,
           user: user,
           phoneNumber: event.phoneNumber,
           isFirstTime: true,
           isOtpSent: false,
-          errorMessage: null,
-        ));
-      } else {
-        emit(state.copyWith(
-          status: AuthStatus.authenticated,
-          user: user,
-          phoneNumber: event.phoneNumber,
-          isFirstTime: false,
-          isOtpSent: false,
-          successMessage: 'Welcome to Pathway!',
           errorMessage: null,
         ));
       }
@@ -280,6 +312,19 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
         reference: event.reference,
         gender: event.gender,
       );
+      final phone = state.phoneNumber.isNotEmpty
+          ? state.phoneNumber
+          : user.phoneNumber;
+      final storage = AuthLocalStorage();
+      await storage.saveCustomUserDetails(
+        fullName: event.fullName,
+        email: event.email,
+        reference: event.reference,
+        gender: event.gender,
+        phone: phone,
+      );
+      await storage.setProfileCompleted(true, phone: phone);
+
       emit(state.copyWith(
         status: AuthStatus.authenticated,
         user: user,
@@ -463,6 +508,7 @@ class AuthBloc extends Bloc<AuthEvent, AuthState> {
     ));
     try {
       await logoutUseCase();
+      SocketService().disconnectFully();
       emit(const AuthState(
         status: AuthStatus.unauthenticated,
         user: null,

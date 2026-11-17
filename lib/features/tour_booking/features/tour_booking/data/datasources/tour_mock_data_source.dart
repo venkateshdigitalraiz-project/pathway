@@ -25,9 +25,9 @@ class TourMockDataSource implements TourRemoteDataSource {
           addOnIds: const [],
           totalAmount: p.price * travellers,
           status: status,
-          customerName: 'Venkatesh Kumar',
-          email: 'venkatesh@gmail.com',
-          phone: '9876543210',
+          customerName: 'Traveler',
+          email: '',
+          phone: '',
           notes: '',
           paymentMethod: TourPaymentMethod.upi,
         );

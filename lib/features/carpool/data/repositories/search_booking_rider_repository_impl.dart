@@ -334,6 +334,9 @@ class SearchBookingRiderRepositoryImpl implements SearchBookingRiderRepository {
               bookingData?['vehicle']?.toString() ??
               bookingData?['vehicleModel']?.toString() ??
               ride.vehicle,
+          vehicleModel:
+              bookingData?['vehicleModel']?.toString() ??
+              ride.vehicleModel,
           vehicleNumber:
               bookingData?['vehicleNumber']?.toString() ??
               ride.vehicleNumber ??

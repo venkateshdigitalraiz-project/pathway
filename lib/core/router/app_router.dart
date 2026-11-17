@@ -64,41 +64,60 @@ class AppRouter {
       refreshListenable: GoRouterRefreshStream(authBloc.stream),
       redirect: (BuildContext context, GoRouterState state) {
         final authState = authBloc.state;
-        final bool isFirstTimeNeedsDetails =
-            authState.status == AuthStatus.requireUserDetails ||
-            (authState.isFirstTime &&
-                authState.user != null &&
-                !AuthLocalStorage().isProfileCompleted());
+        final storage = AuthLocalStorage();
+        final isProfileDone = storage.isProfileCompleted(authState.phoneNumber);
+        final savedName =
+            storage.getFullName(authState.phoneNumber)?.trim() ?? '';
+        final currentName = authState.user?.fullName.trim() ?? '';
+        final effectiveName = (savedName.isNotEmpty &&
+                !savedName.toLowerCase().startsWith('user'))
+            ? savedName
+            : currentName;
+
+        final bool hasValidFullName = effectiveName.isNotEmpty &&
+            effectiveName.toLowerCase() != 'user' &&
+            !effectiveName.toLowerCase().startsWith('user ') &&
+            !RegExp(r'^user[\s_-]*\d*$', caseSensitive: false)
+                .hasMatch(effectiveName);
+
+        final bool profileCompleted = isProfileDone && hasValidFullName;
 
         final bool isAuthenticated =
             (authState.status == AuthStatus.authenticated &&
                 authState.user != null) ||
-            AuthLocalStorage().isLoggedIn();
+            storage.isLoggedIn();
         final String location = state.matchedLocation;
 
-        final bool isAuthRoute = location == AppRoutes.welcome ||
+        final bool isPublicAuthRoute = location == AppRoutes.welcome ||
             location == AppRoutes.register ||
-            location == AppRoutes.nameInput ||
-            location == AppRoutes.userDetails;
+            location == AppRoutes.nameInput;
 
-        // If user is required to complete profile details on first-time login
-        if (isFirstTimeNeedsDetails) {
+        // 1. If profile is NOT completed and user logged in (first-time install):
+        // Enforce redirection to UserDetailsPage!
+        if (!profileCompleted &&
+            (authState.status == AuthStatus.requireUserDetails ||
+                isAuthenticated)) {
           if (location != AppRoutes.userDetails) {
             return AppRoutes.userDetails;
           }
           return null;
         }
 
-        // If not authenticated, ensure user stays on auth pages
+        // 2. If user already completed profile and is on userDetails, redirect to main
+        if (profileCompleted && location == AppRoutes.userDetails) {
+          return AppRoutes.main;
+        }
+
+        // 3. If not authenticated, ensure user stays on public auth pages
         if (!isAuthenticated) {
-          if (!isAuthRoute) {
+          if (!isPublicAuthRoute && location != AppRoutes.userDetails) {
             return AppRoutes.welcome;
           }
           return null;
         }
 
-        // If authenticated and currently on an auth page, redirect to main dashboard
-        if (isAuthenticated && isAuthRoute) {
+        // 4. If authenticated and currently on welcome/register, redirect to main dashboard
+        if (isAuthenticated && isPublicAuthRoute) {
           return AppRoutes.main;
         }
 

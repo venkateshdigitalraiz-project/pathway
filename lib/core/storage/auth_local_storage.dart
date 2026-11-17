@@ -18,6 +18,11 @@ class AuthLocalStorage {
   static const String keyUserJson = 'auth_user_json';
   static const String keyWholeAuthData = 'auth_whole_data';
   static const String keyIsProfileCompleted = 'auth_profile_completed';
+  static const String keyFullName = 'user_full_name';
+  static const String keyEmail = 'user_email';
+  static const String keyReference = 'user_reference';
+  static const String keyGender = 'user_gender';
+  static const String keyDriverOnline = 'carpool_driver_online';
 
   SharedPreferences? _prefs;
 
@@ -92,11 +97,143 @@ class AuthLocalStorage {
     debugPrint('============================================================================\n');
   }
 
-  /// Store or update UserProfile
-  Future<void> saveUserProfile(UserProfile user) async {
+  /// Store or update UserProfile and individual profile keys in SharedPreferences
+  Future<void> saveUserProfile(UserProfile user, {String? phone}) async {
     final sp = _prefs ?? await init();
     await sp.setString(keyUserJson, jsonEncode(user.toJson()));
-    debugPrint('[LOCAL STORAGE: USER PROFILE PERSISTED] ${user.id} - ${user.fullName} (${user.role})');
+
+    final trimmedName = user.fullName.trim();
+    final bool hasValidName = trimmedName.isNotEmpty &&
+        trimmedName.toLowerCase() != 'user' &&
+        !trimmedName.toLowerCase().startsWith('user ') &&
+        !RegExp(r'^user[\s_-]*\d*$', caseSensitive: false)
+            .hasMatch(trimmedName);
+
+    if (hasValidName) {
+      await sp.setString(keyFullName, trimmedName);
+      await sp.setBool(keyIsProfileCompleted, true);
+    }
+    if (user.email.isNotEmpty && !user.email.contains('@pathway.com')) {
+      await sp.setString(keyEmail, user.email);
+    }
+    if (user.gender != null && user.gender!.isNotEmpty) {
+      await sp.setString(keyGender, user.gender!);
+    }
+    if (user.reference != null && user.reference!.isNotEmpty) {
+      await sp.setString(keyReference, user.reference!);
+    }
+
+    // Also persist per-phone if available so any phone login remembers its details
+    final p = phone ?? user.phoneNumber;
+    final cleanPhone = p.replaceAll(RegExp(r'[^0-9]'), '');
+    if (cleanPhone.isNotEmpty) {
+      if (hasValidName) {
+        await sp.setString('phone_${cleanPhone}_fullName', trimmedName);
+        await sp.setBool('phone_${cleanPhone}_completed', true);
+      }
+      if (user.email.isNotEmpty && !user.email.contains('@pathway.com')) {
+        await sp.setString('phone_${cleanPhone}_email', user.email);
+      }
+      if (user.gender != null && user.gender!.isNotEmpty) {
+        await sp.setString('phone_${cleanPhone}_gender', user.gender!);
+      }
+      if (user.reference != null && user.reference!.isNotEmpty) {
+        await sp.setString('phone_${cleanPhone}_reference', user.reference!);
+      }
+    }
+
+    debugPrint('[LOCAL STORAGE: USER PROFILE PERSISTED] ${user.id} - ${user.fullName} (hasValidName: $hasValidName)');
+  }
+
+  /// Explicitly save custom user details entered in UserDetailsPage
+  Future<void> saveCustomUserDetails({
+    required String fullName,
+    required String email,
+    String? reference,
+    required String gender,
+    String? phone,
+  }) async {
+    final sp = _prefs ?? await init();
+    final trimmedName = fullName.trim();
+    final trimmedEmail = email.trim();
+    final trimmedGender = gender.trim();
+    final trimmedRef = reference?.trim();
+
+    await sp.setString(keyFullName, trimmedName);
+    await sp.setString(keyEmail, trimmedEmail);
+    await sp.setString(keyGender, trimmedGender);
+    if (trimmedRef != null && trimmedRef.isNotEmpty) {
+      await sp.setString(keyReference, trimmedRef);
+    } else {
+      await sp.remove(keyReference);
+    }
+    await sp.setBool(keyIsProfileCompleted, true);
+
+    // Save under phone key as well
+    if (phone != null) {
+      final cleanPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (cleanPhone.isNotEmpty) {
+        await sp.setString('phone_${cleanPhone}_fullName', trimmedName);
+        await sp.setString('phone_${cleanPhone}_email', trimmedEmail);
+        await sp.setString('phone_${cleanPhone}_gender', trimmedGender);
+        if (trimmedRef != null && trimmedRef.isNotEmpty) {
+          await sp.setString('phone_${cleanPhone}_reference', trimmedRef);
+        }
+        await sp.setBool('phone_${cleanPhone}_completed', true);
+      }
+    }
+
+    debugPrint('[LOCAL STORAGE: CUSTOM DETAILS STORED] Name: $trimmedName | Email: $trimmedEmail | Gender: $trimmedGender | Ref: $trimmedRef');
+  }
+
+  /// Retrieve the stored full name
+  String? getFullName([String? phone]) {
+    if (phone != null) {
+      final clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      final pName = _prefs?.getString('phone_${clean}_fullName');
+      if (pName != null &&
+          pName.trim().isNotEmpty &&
+          !pName.toLowerCase().startsWith('user')) {
+        return pName.trim();
+      }
+    }
+    final name = _prefs?.getString(keyFullName);
+    if (name != null &&
+        name.trim().isNotEmpty &&
+        !name.toLowerCase().startsWith('user')) {
+      return name.trim();
+    }
+    return null;
+  }
+
+  /// Retrieve the stored email
+  String? getEmail([String? phone]) {
+    if (phone != null) {
+      final clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      final pEmail = _prefs?.getString('phone_${clean}_email');
+      if (pEmail != null && pEmail.trim().isNotEmpty) return pEmail.trim();
+    }
+    return _prefs?.getString(keyEmail);
+  }
+
+  /// Retrieve the stored reference code
+  String? getReference([String? phone]) {
+    if (phone != null) {
+      final clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      final pRef = _prefs?.getString('phone_${clean}_reference');
+      if (pRef != null && pRef.trim().isNotEmpty) return pRef.trim();
+    }
+    return _prefs?.getString(keyReference);
+  }
+
+  /// Retrieve the stored gender
+  String? getGender([String? phone]) {
+    if (phone != null) {
+      final clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      final pGender = _prefs?.getString('phone_${clean}_gender');
+      if (pGender != null && pGender.trim().isNotEmpty) return pGender.trim();
+    }
+    return _prefs?.getString(keyGender);
   }
 
   /// Retrieve the token
@@ -207,33 +344,59 @@ class AuthLocalStorage {
   }
 
   /// Retrieve the UserProfile object
-  UserProfile? getUserProfile() {
+  UserProfile? getUserProfile([String? phone]) {
     final userMap = getUserData();
-    if (userMap == null) return null;
+    final savedFullName = getFullName(phone);
+    final savedEmail = getEmail(phone);
+    final savedGender = getGender(phone);
+    final savedReference = getReference(phone);
+
+    if (userMap == null && savedFullName == null) return null;
+
     try {
-      String firstName = userMap['firstName'] as String? ?? '';
-      String lastName = userMap['lastName'] as String? ?? '';
-      if (firstName.isEmpty && userMap['name'] != null) {
-        final fullName = (userMap['name'] as String).trim();
+      String firstName = userMap?['firstName'] as String? ?? '';
+      String lastName = userMap?['lastName'] as String? ?? '';
+
+      if (savedFullName != null &&
+          savedFullName.trim().isNotEmpty &&
+          !savedFullName.toLowerCase().startsWith('user')) {
+        final parts = savedFullName.trim().split(' ');
+        firstName = parts.first;
+        lastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
+      } else if (firstName.isEmpty && userMap?['name'] != null) {
+        final fullName = (userMap!['name'] as String).trim();
         final parts = fullName.split(' ');
         firstName = parts.isNotEmpty ? parts.first : fullName;
         lastName = parts.length > 1 ? parts.sublist(1).join(' ') : '';
       }
 
+      final effectiveEmail = (savedEmail != null && savedEmail.isNotEmpty)
+          ? savedEmail
+          : (userMap?['email']?.toString() ?? '');
+
+      final effectiveGender = (savedGender != null && savedGender.isNotEmpty)
+          ? savedGender
+          : userMap?['gender']?.toString();
+
+      final effectiveReference = (savedReference != null && savedReference.isNotEmpty)
+          ? savedReference
+          : (userMap?['reference']?.toString() ?? userMap?['referralCode']?.toString());
+
       return UserProfile(
-        id: userMap['id']?.toString() ??
-            userMap['_id']?.toString() ??
+        id: userMap?['id']?.toString() ??
+            userMap?['_id']?.toString() ??
             'usr_${DateTime.now().millisecondsSinceEpoch}',
         firstName: firstName.isNotEmpty ? firstName : 'User',
         lastName: lastName,
-        email: userMap['email']?.toString() ?? '',
-        phoneNumber: userMap['phone']?.toString() ??
-            userMap['phoneNumber']?.toString() ??
+        email: effectiveEmail,
+        phoneNumber: userMap?['phone']?.toString() ??
+            userMap?['phoneNumber']?.toString() ??
+            phone ??
             '',
-        role: userMap['role']?.toString() ?? 'user',
-        authProvider: userMap['authProvider']?.toString() ?? 'phone',
-        gender: userMap['gender']?.toString(),
-        reference: userMap['reference']?.toString() ?? userMap['referralCode']?.toString(),
+        role: userMap?['role']?.toString() ?? 'user',
+        authProvider: userMap?['authProvider']?.toString() ?? 'phone',
+        gender: effectiveGender,
+        reference: effectiveReference,
       );
     } catch (_) {
       return null;
@@ -241,14 +404,48 @@ class AuthLocalStorage {
   }
 
   /// Check if user has completed profile details
-  bool isProfileCompleted() {
-    return _prefs?.getBool(keyIsProfileCompleted) ?? false;
+  bool isProfileCompleted([String? phone]) {
+    final name = getFullName(phone);
+    final bool hasValidName = name != null &&
+        name.trim().isNotEmpty &&
+        name.trim().toLowerCase() != 'user' &&
+        !name.trim().toLowerCase().startsWith('user ') &&
+        !RegExp(r'^user[\s_-]*\d*$', caseSensitive: false)
+            .hasMatch(name.trim());
+
+    if (!hasValidName) return false;
+
+    if (phone != null) {
+      final clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (clean.isNotEmpty &&
+          _prefs?.getBool('phone_${clean}_completed') == true) {
+        return true;
+      }
+    }
+    return _prefs?.getBool(keyIsProfileCompleted) == true;
   }
 
   /// Mark profile as completed or incomplete
-  Future<void> setProfileCompleted(bool completed) async {
+  Future<void> setProfileCompleted(bool completed, {String? phone}) async {
     final sp = _prefs ?? await init();
     await sp.setBool(keyIsProfileCompleted, completed);
+    if (phone != null) {
+      final clean = phone.replaceAll(RegExp(r'[^0-9]'), '');
+      if (clean.isNotEmpty) {
+        await sp.setBool('phone_${clean}_completed', completed);
+      }
+    }
+  }
+
+  /// Check whether driver is online (defaults to true)
+  bool isDriverOnline() {
+    return _prefs?.getBool(keyDriverOnline) ?? true;
+  }
+
+  /// Persist driver online/offline state
+  Future<void> setDriverOnline(bool online) async {
+    final sp = _prefs ?? await init();
+    await sp.setBool(keyDriverOnline, online);
   }
 
   /// Retrieve the whole data object stored during login
@@ -268,21 +465,30 @@ class AuthLocalStorage {
     return token != null && token.isNotEmpty;
   }
 
-  /// Clear all stored authentication data
+  /// Clear all stored authentication session tokens upon logout.
+  /// User profile details (full name, email, gender, reference) and completion flag
+  /// are preserved so that subsequent logins do not repeatedly prompt for UserDetailsPage.
   Future<void> clearAuthData() async {
     final sp = _prefs ?? await init();
     await sp.remove(keyToken);
+    await sp.remove('token');
     await sp.remove(keyAccessToken);
+    await sp.remove('accessToken');
+    await sp.remove('access_token');
     await sp.remove(keyRefreshToken);
+    await sp.remove('refreshToken');
+    await sp.remove('refresh_token');
     await sp.remove(keyExpiresIn);
     await sp.remove(keyRefreshExpiresAt);
     await sp.remove(keyUserJson);
     await sp.remove(keyWholeAuthData);
-    await sp.remove(keyIsProfileCompleted);
-    await sp.clear();
-    debugPrint('\n==================== [LOCAL STORAGE: AUTH DATA CLEARED] ====================');
-    debugPrint('All authentication keys and SharedPreferences have been wiped successfully.');
-    debugPrint('============================================================================\n');
+
+    // Note: DO NOT delete keyFullName, keyEmail, keyGender, keyReference,
+    // keyIsProfileCompleted, or phone-specific profile keys!
+    // DO NOT call sp.clear()!
+    debugPrint('\n==================== [LOCAL STORAGE: AUTH SESSION CLEARED] ====================');
+    debugPrint('Auth tokens removed. User profile details preserved for subsequent logins.');
+    debugPrint('================================================================================\n');
   }
 }
 

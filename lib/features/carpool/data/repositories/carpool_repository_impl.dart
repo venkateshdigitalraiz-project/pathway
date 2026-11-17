@@ -1,3 +1,4 @@
+import '../../domain/entities/accepted_booking_entity.dart';
 import '../../domain/entities/carpool_entities.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
 import '../../domain/repositories/carpool_repository.dart';
@@ -22,6 +23,14 @@ class CarpoolRepositoryImpl implements CarpoolRepository {
 
   @override
   Future<void> bookRide(String rideId) => _remote.bookRide(rideId);
+
+  @override
+  Future<AcceptedBookingEntity> acceptBooking(String bookingId) =>
+      _remote.acceptBooking(bookingId);
+
+  @override
+  Future<void> rejectBooking(String bookingId, String reason) =>
+      _remote.rejectBooking(bookingId, reason);
 
   @override
   Future<CarpoolRideEntity> publishRide(CarpoolPublishRideParams params) =>

@@ -6,14 +6,19 @@ import 'package:pathway/core/utils/carpool_status.dart';
 
 import '../../data/datasources/carpool_mock_data_source.dart';
 import '../../data/repositories/carpool_repository_impl.dart';
+import '../../domain/usecases/accept_booking_usecase.dart';
 import '../../domain/usecases/carpool_usecases.dart';
+import '../../domain/usecases/reject_booking_usecase.dart';
 import '../bloc/carpool_find_ride_bloc.dart';
 import '../bloc/carpool_home_bloc.dart';
 import '../bloc/carpool_nav_cubit.dart';
-import '../bloc/carpool_offer_ride_bloc.dart';
 import 'carpool_find_ride_page.dart';
 import 'carpool_offer_ride_page.dart';
 import 'carpool_publish_ride_page.dart';
+import 'start_ride_page.dart';
+import '../../domain/entities/available_rider_entity.dart';
+import '../../domain/entities/carpool_entities.dart';
+import '../../domain/entities/start_ride_entity.dart';
 
 // Carpool Home Page – exact 1:1 match with the target UI design:
 // 1. Top bar: Hamburger menu (3 horizontal rounded bars) & Notification bell with '2' badge.
@@ -38,6 +43,8 @@ class CarpoolHomePage extends StatelessWidget {
             create: (_) => CarpoolHomeBloc(
               getUser: CarpoolGetUserUseCase(repository),
               getPopularRoutes: CarpoolGetPopularRoutesUseCase(repository),
+              acceptBooking: AcceptBookingUseCase(repository),
+              rejectBooking: RejectBookingUseCase(repository),
             )..add(const CarpoolHomeStarted()),
           ),
           BlocProvider<CarpoolFindRideBloc>(
@@ -111,6 +118,160 @@ class _CarpoolHomeView extends StatelessWidget {
     );
   }
 
+  void _handleAcceptBooking(
+    BuildContext context,
+    AvailableRiderEntity booking,
+  ) {
+    final ride = CarpoolRideEntity(
+      id: booking.rideId,
+      driverName: 'Driver',
+      driverRating: 4.9,
+      driverTrips: 120,
+      vehicle:
+          '${booking.vehicleModel ?? "Sedan"} • ${booking.vehicleNumber ?? "GVJVHCY"}',
+      vehicleModel: booking.vehicleModel ?? 'Hgigih',
+      vehicleNumber: booking.vehicleNumber ?? 'GVJVHCY',
+      from: booking.fromAddress,
+      to: booking.toAddress,
+      departure: DateTime.now(),
+      seats: booking.seatsBooked,
+      pricePerSeat: booking.totalAmount,
+      distanceKm: booking.distanceKm.toInt(),
+      status: CarpoolRideStatus.upcoming,
+      rideType: CarpoolRideType.normal,
+    );
+
+    final passenger = StartRidePassengerEntity(
+      id: booking.passengerId,
+      name: booking.riderName,
+      phone: booking.riderPhone,
+      rating: booking.rating,
+      totalRides: booking.totalRides,
+      pickupLocation: booking.fromAddress,
+      dropoffLocation: booking.toAddress,
+      distanceToPassengerKm: booking.distanceKm,
+      etaToPassengerMin: booking.etaMin,
+      journeyDistanceKm: 12.5,
+      journeyEtaMin: 25,
+      passengerCount: booking.seatsBooked,
+    );
+
+    StartRidePage.show(context, ride: ride, passenger: passenger);
+  }
+
+  void _showDeclineBookingDialog(
+    BuildContext context,
+    AvailableRiderEntity booking,
+  ) {
+    final reasonController = TextEditingController();
+    showDialog<void>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        backgroundColor: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(22),
+        ),
+        title: const Text(
+          'Decline Ride Request',
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF140D43),
+          ),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Please provide a reason for declining ${booking.riderName}\'s ride request:',
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF6B658C),
+              ),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: reasonController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText:
+                    'e.g. Vehicle maintenance issue, unable to accommodate passenger',
+                hintStyle: const TextStyle(
+                  fontSize: 12.5,
+                  color: Color(0xFF94A3B8),
+                ),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(14),
+                  borderSide:
+                      const BorderSide(color: Color(0xFF5D24F7), width: 1.5),
+                ),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+            ),
+            child: const Text(
+              'Cancel',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              final reason = reasonController.text.trim();
+              Navigator.pop(dialogCtx);
+              context.read<CarpoolHomeBloc>().add(
+                    CarpoolHomeRejectBookingRequested(
+                      bookingId: booking.bookingId,
+                      reason: reason.isNotEmpty
+                          ? reason
+                          : 'Vehicle maintenance issue, unable to accommodate passenger',
+                    ),
+                  );
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFEF4444),
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+            ),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -178,7 +339,96 @@ class _CarpoolHomeView extends StatelessWidget {
             // 2. Main Scrollable Content
             SafeArea(
               bottom: false,
-              child: BlocBuilder<CarpoolHomeBloc, CarpoolHomeState>(
+              child: BlocConsumer<CarpoolHomeBloc, CarpoolHomeState>(
+                listenWhen: (prev, curr) =>
+                    (curr.error != null && curr.error != prev.error) ||
+                    (curr.message != null && curr.message != prev.message) ||
+                    (curr.acceptedBooking != null &&
+                        curr.acceptedBooking != prev.acceptedBooking),
+                listener: (context, state) {
+                  if (state.error != null) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(state.error!),
+                        backgroundColor: const Color(0xFFEF4444),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+
+                  if (state.message != null) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(state.message!),
+                        backgroundColor: const Color(0xFF475569),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+                  }
+
+                  if (state.acceptedBooking != null &&
+                      state.acceptedRider != null) {
+                    final acceptedBooking = state.acceptedBooking!;
+                    final acceptedRider = state.acceptedRider!;
+
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(acceptedBooking.message.isNotEmpty
+                            ? acceptedBooking.message
+                            : 'Booking accepted successfully!'),
+                        backgroundColor: const Color(0xFF10B981),
+                        behavior: SnackBarBehavior.floating,
+                      ),
+                    );
+
+                    final ride = CarpoolRideEntity(
+                      id: acceptedBooking.rideId.isNotEmpty
+                          ? acceptedBooking.rideId
+                          : acceptedRider.rideId,
+                      driverName: state.user?.name ?? 'Driver',
+                      driverRating: 4.9,
+                      driverTrips: 120,
+                      vehicle:
+                          '${acceptedRider.vehicleModel ?? "Sedan"} • ${acceptedRider.vehicleNumber ?? "GVJVHCY"}',
+                      vehicleModel: acceptedRider.vehicleModel ?? 'Hgigih',
+                      vehicleNumber: acceptedRider.vehicleNumber ?? 'GVJVHCY',
+                      from: acceptedRider.fromAddress,
+                      to: acceptedRider.toAddress,
+                      departure: DateTime.now(),
+                      seats: acceptedBooking.seatsBooked,
+                      pricePerSeat: acceptedBooking.totalAmount,
+                      distanceKm: acceptedRider.distanceKm.toInt(),
+                      status: CarpoolRideStatus.upcoming,
+                      rideType: CarpoolRideType.normal,
+                      rideCode: acceptedBooking.bookingCode,
+                    );
+
+                    final passenger = StartRidePassengerEntity(
+                      id: acceptedBooking.passengerId.isNotEmpty
+                          ? acceptedBooking.passengerId
+                          : acceptedRider.passengerId,
+                      name: acceptedRider.riderName,
+                      phone: acceptedRider.riderPhone,
+                      rating: acceptedRider.rating,
+                      totalRides: acceptedRider.totalRides,
+                      pickupLocation: acceptedRider.fromAddress,
+                      dropoffLocation: acceptedRider.toAddress,
+                      distanceToPassengerKm: acceptedRider.distanceKm,
+                      etaToPassengerMin: acceptedRider.etaMin,
+                      journeyDistanceKm: 12.5,
+                      journeyEtaMin: 25,
+                      passengerCount: acceptedBooking.seatsBooked,
+                    );
+
+                    context
+                        .read<CarpoolHomeBloc>()
+                        .add(const CarpoolHomeClearAcceptedBooking());
+                    StartRidePage.show(context, ride: ride, passenger: passenger);
+                  }
+                },
                 builder: (context, state) {
                   final userName = state.user?.name.isNotEmpty == true
                       ? state.user!.name
@@ -338,6 +588,74 @@ class _CarpoolHomeView extends StatelessWidget {
 
                       // "Go Green - Reduce Carbon Footprint" Banner
                       const _GoGreenBanner(),
+
+                      const SizedBox(height: 22),
+
+                      // Available Rider Header with Online/Offline Slide Switch
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          const Text(
+                            'Availible Rider',
+                            style: TextStyle(
+                              fontSize: 19.5,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF140D43),
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          _OnlineOfflineSlideSwitch(
+                            isOnline: state.isOnline,
+                            onChanged: (val) {
+                              context
+                                  .read<CarpoolHomeBloc>()
+                                  .add(CarpoolHomeToggleOnlineOffline(val));
+                            },
+                          ),
+                        ],
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Live User Event Raised from User Side (BOOKING_CREATED)
+                      if (!state.isOnline)
+                        _OfflineStateBanner(
+                          onGoOnline: () {
+                            context
+                                .read<CarpoolHomeBloc>()
+                                .add(const CarpoolHomeToggleOnlineOffline(true));
+                          },
+                        )
+                      else if (state.availableBookings.isNotEmpty)
+                        ListView.separated(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: state.availableBookings.length,
+                          separatorBuilder: (_, __) =>
+                              const SizedBox(height: 12),
+                          itemBuilder: (context, index) {
+                            final booking = state.availableBookings[index];
+                            final isAccepting =
+                                state.acceptingBookingId == booking.bookingId;
+                            final isRejecting =
+                                state.rejectingBookingId == booking.bookingId;
+                            return _AvailableRiderCard(
+                              booking: booking,
+                              isAccepting: isAccepting,
+                              isRejecting: isRejecting,
+                              onAccept: () {
+                                context.read<CarpoolHomeBloc>().add(
+                                      CarpoolHomeAcceptBookingRequested(booking),
+                                    );
+                              },
+                              onDismiss: () =>
+                                  _showDeclineBookingDialog(context, booking),
+                            );
+                          },
+                        )
+                      else
+                        const _ListeningForRidersCard(),
 
                       const SizedBox(height: 22),
 
@@ -1265,4 +1583,673 @@ class _CitySkylineArtPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// A modern, smooth slide switch for toggling Driver/Rider Online & Offline status
+class _OnlineOfflineSlideSwitch extends StatelessWidget {
+  final bool isOnline;
+  final ValueChanged<bool> onChanged;
+
+  const _OnlineOfflineSlideSwitch({
+    required this.isOnline,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => onChanged(!isOnline),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeInOut,
+        width: 104,
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          gradient: isOnline
+              ? const LinearGradient(
+                  colors: [Color(0xFFE8FDF3), Color(0xFFD1FAE5)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : const LinearGradient(
+                  colors: [Color(0xFFF8FAFC), Color(0xFFE2E8F0)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+          border: Border.all(
+            color: isOnline ? const Color(0xFF10B981) : const Color(0xFFCBD5E1),
+            width: 1.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: isOnline
+                  ? const Color(0xFF10B981).withValues(alpha: 0.18)
+                  : Colors.black.withValues(alpha: 0.04),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Status text & indicator dot
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeInOut,
+              alignment: isOnline ? Alignment.centerLeft : Alignment.centerRight,
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: isOnline ? 9 : 0,
+                  right: isOnline ? 0 : 9,
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: isOnline
+                            ? const Color(0xFF059669)
+                            : const Color(0xFF64748B),
+                        boxShadow: isOnline
+                            ? [
+                                BoxShadow(
+                                  color: const Color(0xFF10B981).withValues(alpha: 0.6),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ]
+                            : null,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isOnline ? 'Online' : 'Offline',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color: isOnline
+                            ? const Color(0xFF047857)
+                            : const Color(0xFF475569),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Sliding knob
+            AnimatedAlign(
+              duration: const Duration(milliseconds: 260),
+              curve: Curves.easeInOut,
+              alignment: isOnline ? Alignment.centerRight : Alignment.centerLeft,
+              child: Container(
+                width: 27,
+                height: 27,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: isOnline
+                          ? const Color(0xFF059669).withValues(alpha: 0.3)
+                          : Colors.black.withValues(alpha: 0.16),
+                      blurRadius: 5,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: Center(
+                  child: Icon(
+                    isOnline
+                        ? Icons.power_settings_new_rounded
+                        : Icons.power_off_rounded,
+                    size: 14.5,
+                    color: isOnline
+                        ? const Color(0xFF10B981)
+                        : const Color(0xFF94A3B8),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Card displaying a live rider booking raised via socket `BOOKING_CREATED`
+class _AvailableRiderCard extends StatelessWidget {
+  final AvailableRiderEntity booking;
+  final bool isAccepting;
+  final bool isRejecting;
+  final VoidCallback onAccept;
+  final VoidCallback onDismiss;
+
+  const _AvailableRiderCard({
+    required this.booking,
+    this.isAccepting = false,
+    this.isRejecting = false,
+    required this.onAccept,
+    required this.onDismiss,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(
+          color: booking.isNew
+              ? const Color(0xFF10B981)
+              : const Color(0xFFE2E8F0),
+          width: booking.isNew ? 1.6 : 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF140D43).withValues(alpha: 0.06),
+            blurRadius: 16,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row: Avatar, Rider Name, Rating & Price
+          Row(
+            children: [
+              // Avatar Circle
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF818CF8), Color(0xFF4F46E5)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                ),
+                child: Center(
+                  child: Text(
+                    booking.riderName.isNotEmpty
+                        ? booking.riderName.substring(0, 1).toUpperCase()
+                        : 'P',
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ),
+
+              const SizedBox(width: 12),
+
+              // Rider Name & Rating
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            booking.riderName,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF140D43),
+                              letterSpacing: -0.2,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        if (booking.isNew) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 6,
+                              vertical: 2,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: const Text(
+                              'NEW',
+                              style: TextStyle(
+                                color: Color(0xFF15803D),
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.star_rounded,
+                          size: 16,
+                          color: Color(0xFFF59E0B),
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          '${booking.rating.toStringAsFixed(1)} (${booking.totalRides} rides)',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF64748B),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+
+              // Fare & Seats
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    '₹${booking.totalAmount}',
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF4F46E5),
+                      letterSpacing: -0.3,
+                    ),
+                  ),
+                  Text(
+                    '${booking.seatsBooked} ${booking.seatsBooked > 1 ? "Seats" : "Seat"}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF64748B),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          const SizedBox(height: 12),
+
+          // Route Details
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Icons column (Purple origin dot, connecting line, Red destination pin)
+              Column(
+                children: [
+                  Container(
+                    width: 10,
+                    height: 10,
+                    decoration: const BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(0xFF5025D1),
+                    ),
+                  ),
+                  Container(
+                    width: 1.5,
+                    height: 22,
+                    color: const Color(0xFFCBD5E1),
+                  ),
+                  const Icon(
+                    Icons.location_on_rounded,
+                    size: 14,
+                    color: Color(0xFFEF4444),
+                  ),
+                ],
+              ),
+
+              const SizedBox(width: 10),
+
+              // Addresses
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      booking.fromAddress,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      booking.toAddress,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF1E293B),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+
+              // Distance & ETA
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3.5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.near_me_rounded,
+                          size: 11,
+                          color: Color(0xFF6366F1),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          '${booking.distanceKm} km',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '${booking.etaMin} min away',
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF059669),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 16),
+
+          // Action Buttons: Decline & Accept Ride
+          Row(
+            children: [
+              // Decline
+              InkWell(
+                onTap: (isAccepting || isRejecting) ? null : onDismiss,
+                borderRadius: BorderRadius.circular(14),
+                child: Container(
+                  height: 42,
+                  padding: const EdgeInsets.symmetric(horizontal: 14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  alignment: Alignment.center,
+                  child: isRejecting
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Color(0xFF64748B)),
+                          ),
+                        )
+                      : const Text(
+                          'Decline',
+                          style: TextStyle(
+                            color: Color(0xFF64748B),
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                ),
+              ),
+
+              const SizedBox(width: 10),
+
+              // Accept & Start Ride
+              Expanded(
+                child: InkWell(
+                  onTap: isAccepting ? null : onAccept,
+                  borderRadius: BorderRadius.circular(14),
+                  child: Container(
+                    height: 42,
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFF5025D1), Color(0xFF6366F1)],
+                      ),
+                      borderRadius: BorderRadius.circular(14),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF5025D1).withValues(alpha: 0.35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    alignment: Alignment.center,
+                    child: isAccepting
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.2,
+                              valueColor:
+                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                            ),
+                          )
+                        : const Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                'Accept Ride',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: -0.1,
+                                ),
+                              ),
+                              SizedBox(width: 6),
+                              Icon(
+                                Icons.arrow_forward_rounded,
+                                color: Colors.white,
+                                size: 16,
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Offline status banner shown when driver is offline
+class _OfflineStateBanner extends StatelessWidget {
+  final VoidCallback onGoOnline;
+
+  const _OfflineStateBanner({required this.onGoOnline});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 1.2),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE2E8F0),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.power_off_rounded,
+                  color: Color(0xFF64748B),
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'You are currently Offline',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    SizedBox(height: 2),
+                    Text(
+                      'Switch to Online to receive live rider bookings',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            height: 38,
+            child: ElevatedButton(
+              onPressed: onGoOnline,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF10B981),
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                'Go Online',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 13.5,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Active listening card when online and waiting for new BOOKING_CREATED events
+class _ListeningForRidersCard extends StatelessWidget {
+  const _ListeningForRidersCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F3FF),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: const Color(0xFFDDD6FE), width: 1.2),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: const Color(0xFFEDE9FE),
+              shape: BoxShape.circle,
+              border: Border.all(color: const Color(0xFF8B5CF6), width: 1.5),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.radar_rounded,
+                color: Color(0xFF6D28D9),
+                size: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: 14),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Listening for Rider Bookings...',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF4C1D95),
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  'New ride requests from users will appear here in real time.',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF6D28D9),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

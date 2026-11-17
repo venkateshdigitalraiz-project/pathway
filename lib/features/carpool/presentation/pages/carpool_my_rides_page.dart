@@ -6,6 +6,7 @@ import 'package:pathway/core/utils/carpool_status.dart';
 import '../../domain/entities/carpool_entities.dart';
 import '../bloc/carpool_my_rides_bloc.dart';
 import 'carpool_publish_ride_page.dart';
+import 'start_ride_page.dart';
 
 /// CarpoolMyRidesPage - Modern, beautiful, and user-catching dashboard
 /// displaying real published rides fetched from:
@@ -219,6 +220,13 @@ class _CarpoolMyRidesPageState extends State<CarpoolMyRidesPage> {
     }
   }
 
+  Future<void> _startRide(
+    BuildContext context,
+    CarpoolRideEntity ride,
+  ) async {
+    await StartRidePage.show(context, ride: ride);
+  }
+
   void _showDetails(BuildContext context, CarpoolRideEntity ride) {
     final originInfo = _PublishedRideCard._resolveLocation(
       ride.from,
@@ -346,6 +354,36 @@ class _CarpoolMyRidesPageState extends State<CarpoolMyRidesPage> {
               '~${ride.distanceKm} km',
             ),
             const SizedBox(height: 20),
+            if (_PublishedRideCard.isNearOrExactDepartureTime(ride.departure) &&
+                ride.status == CarpoolRideStatus.upcoming) ...[
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF10B981),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(24),
+                    ),
+                  ),
+                  icon: const Icon(Icons.play_arrow_rounded, color: Colors.white),
+                  label: const Text(
+                    'Start Ride Now',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    _startRide(context, ride);
+                  },
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
             SizedBox(
               width: double.infinity,
               height: 48,
@@ -796,6 +834,7 @@ class _CarpoolMyRidesPageState extends State<CarpoolMyRidesPage> {
                                 isCancelling: s.cancellingRideId == ride.id,
                                 onDetails: () => _showDetails(context, ride),
                                 onCancel: () => _confirmCancel(context, ride),
+                                onStart: () => _startRide(context, ride),
                               ),
                             );
                           }, childCount: rides.length),
@@ -961,13 +1000,44 @@ class _PublishedRideCard extends StatelessWidget {
   final bool isCancelling;
   final VoidCallback onDetails;
   final VoidCallback onCancel;
+  final VoidCallback? onStart;
 
   const _PublishedRideCard({
     required this.ride,
     this.isCancelling = false,
     required this.onDetails,
     required this.onCancel,
+    this.onStart,
   });
+
+  /// Checks whether [departure] date & time is the exact same or near current time.
+  /// - Same calendar day
+  /// - Within 60 minutes before scheduled departure (near time)
+  /// - Exact same minute / hour
+  /// - Or ongoing up to 3 hours after scheduled departure
+  static bool isNearOrExactDepartureTime(DateTime departure) {
+    final now = DateTime.now();
+
+    final isSameDate = now.year == departure.year &&
+        now.month == departure.month &&
+        now.day == departure.day;
+
+    if (!isSameDate) {
+      // In case ride was scheduled across midnight boundary
+      final diff = departure.difference(now).inMinutes;
+      return diff <= 60 && diff >= -180;
+    }
+
+    final diffMinutes = departure.difference(now).inMinutes;
+    // diffMinutes > 0: departure is within upcoming 60 minutes (near time)
+    // diffMinutes == 0: exact same time
+    // diffMinutes < 0: departure time has arrived / within 3 hours (180 mins)
+    return diffMinutes <= 60 && diffMinutes >= -180;
+  }
+
+  void _startDefault(BuildContext context) {
+    StartRidePage.show(context, ride: ride);
+  }
 
   static ({String place, String city}) _resolveLocation(
     String raw,
@@ -1102,6 +1172,7 @@ class _PublishedRideCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isUpcoming = ride.status == CarpoolRideStatus.upcoming;
+    final isNearOrExactTime = isNearOrExactDepartureTime(ride.departure);
     final originInfo = _resolveLocation(ride.from, ride.originCity);
     final destInfo = _resolveLocation(ride.to, ride.destinationCity);
 
@@ -1172,6 +1243,42 @@ class _PublishedRideCard extends StatelessWidget {
                   ],
                 ),
               ),
+
+              if (isUpcoming && isNearOrExactTime) ...[
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 4,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: const Color(0xFF10B981).withOpacity(0.4),
+                    ),
+                  ),
+                  child: const Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        Icons.bolt_rounded,
+                        size: 13,
+                        color: Color(0xFF059669),
+                      ),
+                      SizedBox(width: 3),
+                      Text(
+                        'Ready to Start',
+                        style: TextStyle(
+                          color: Color(0xFF059669),
+                          fontWeight: FontWeight.w800,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
 
               const Spacer(),
             ],
@@ -1361,7 +1468,54 @@ class _PublishedRideCard extends StatelessWidget {
 
           const SizedBox(height: 14),
 
-          // 5. Action Buttons ("View Details" & "Cancel Ride")
+          // 5. Action Buttons ("Start Ride", "View Details" & "Cancel Ride")
+          if (isUpcoming && isNearOrExactTime) ...[
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onStart ?? () => _startDefault(context),
+              child: Container(
+                height: 44,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF10B981), Color(0xFF059669)],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF10B981).withOpacity(0.35),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.play_arrow_rounded,
+                      size: 22,
+                      color: Colors.white,
+                    ),
+                    SizedBox(width: 6),
+                    Text(
+                      'Start Ride',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14.5,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+
           Row(
             children: [
               Expanded(

@@ -73,6 +73,10 @@ class ApiLogger {
     print('API_URL: $url');
     print('API_METHOD: $method');
     print('API_HEADERS: {$headerStr}');
+    final authVal = headersMap['Authorization'] ?? headersMap['authorization'];
+    if (authVal != null && authVal.isNotEmpty) {
+      print('FULL_AUTH_TOKEN: $authVal');
+    }
     print('API_BODY: $body');
     print('===============================================================\n');
 

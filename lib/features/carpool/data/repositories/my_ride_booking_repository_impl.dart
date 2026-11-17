@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+
 import '../../../../core/constants/api_endpoints.dart';
 import '../../../../core/storage/auth_local_storage.dart';
 import '../../../../core/utils/api_logger.dart';
@@ -115,9 +117,8 @@ class MyRideBookingRepositoryImpl implements MyRideBookingRepository {
   }
 
   @override
-  Future<void> cancelBooking(String bookingId, {String? reason}) async {
+  Future<String?> cancelBooking(String bookingId, {String? reason}) async {
     final targetUrl = ApiEndpoints.cancelBooking(bookingId);
-    final fallbackUrl = ApiEndpoints.cancelRide(bookingId);
 
     final storage = AuthLocalStorage();
     await storage.init();
@@ -139,13 +140,28 @@ class MyRideBookingRepositoryImpl implements MyRideBookingRepository {
         'Authorization': 'Bearer $cleanToken',
     };
 
+    final effectiveReason = (reason != null && reason.trim().isNotEmpty)
+        ? reason.trim()
+        : 'Travel plans changed';
+
     final bodyMap = <String, dynamic>{
-      'reason': reason ?? 'Travel plans changed',
+      'reason': effectiveReason,
     };
     final bodyJson = jsonEncode(bodyMap);
 
+    debugPrint(
+      '\n==================== [API REQUEST: CANCEL_CARPOOL_BOOKING] ====================',
+    );
+    debugPrint('API_URL: $targetUrl');
+    debugPrint('API_METHOD: POST');
+    debugPrint('API_HEADERS: $headers');
+    debugPrint('API_BODY: $bodyJson');
+    debugPrint(
+      '================================================================================',
+    );
+
     ApiLogger.logRequest(
-      title: 'CANCEL_RIDE_BOOKING',
+      title: 'CANCEL_CARPOOL_BOOKING',
       method: 'POST',
       url: targetUrl,
       headers: headers,
@@ -155,9 +171,9 @@ class MyRideBookingRepositoryImpl implements MyRideBookingRepository {
     try {
       final client = HttpClient();
       client.connectionTimeout = const Duration(seconds: 10);
-      var uri = Uri.parse(targetUrl);
+      final uri = Uri.parse(targetUrl);
 
-      var request = await client
+      final request = await client
           .postUrl(uri)
           .timeout(const Duration(seconds: 10));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
@@ -170,48 +186,98 @@ class MyRideBookingRepositoryImpl implements MyRideBookingRepository {
       }
       request.write(bodyJson);
 
-      var response = await request.close().timeout(const Duration(seconds: 10));
-      var responseBody = await response.transform(utf8.decoder).join();
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+      );
+      final responseBody = await response.transform(utf8.decoder).join();
+
+      debugPrint(
+        '\n==================== [API RESPONSE: CANCEL_CARPOOL_BOOKING] ====================',
+      );
+      debugPrint('API_URL: $targetUrl');
+      debugPrint('STATUS_CODE: ${response.statusCode}');
+      debugPrint('API_RESPONSE: $responseBody');
+      debugPrint(
+        '=================================================================================',
+      );
 
       ApiLogger.logResponse(
-        title: 'CANCEL_RIDE_BOOKING',
+        title: 'CANCEL_CARPOOL_BOOKING',
         url: targetUrl,
         statusCode: response.statusCode,
         responseBody: responseBody,
       );
 
-      // If 404, fallback to cancelRide endpoint
-      if (response.statusCode == 404) {
-        uri = Uri.parse(fallbackUrl);
-        request = await client
-            .postUrl(uri)
-            .timeout(const Duration(seconds: 10));
-        request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-        request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-        if (cleanToken != null && cleanToken.isNotEmpty) {
-          request.headers.set(
-            HttpHeaders.authorizationHeader,
-            'Bearer $cleanToken',
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        String successMessage = 'Booking cancelled successfully';
+        if (responseBody.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(responseBody);
+            if (decoded is Map<String, dynamic>) {
+              final status = decoded['status']?.toString().toLowerCase();
+              if (status == 'fail' || status == 'error') {
+                final errorMsg = decoded['message']?.toString() ??
+                    decoded['error']?.toString() ??
+                    'Unable to cancel booking. Please try again.';
+                throw Exception(errorMsg);
+              }
+              if (decoded['message'] != null &&
+                  decoded['message'].toString().isNotEmpty) {
+                successMessage = decoded['message'].toString();
+              }
+            }
+          } on FormatException {
+            // Non-JSON body
+          }
+        }
+
+        // Update locally in cached bookings list
+        final idx = _bookings.indexWhere((b) => b.id == bookingId);
+        if (idx != -1) {
+          _bookings[idx] = _bookings[idx].copyWith(
+            status: RiderBookingStatus.cancelled,
           );
         }
-        request.write(bodyJson);
-        response = await request.close().timeout(const Duration(seconds: 10));
-        responseBody = await response.transform(utf8.decoder).join();
+
+        return successMessage;
+      } else {
+        String errorMessage =
+            'Failed to cancel booking (${response.statusCode})';
+        if (responseBody.isNotEmpty) {
+          try {
+            final decoded = jsonDecode(responseBody);
+            if (decoded is Map<String, dynamic>) {
+              errorMessage = decoded['message']?.toString() ??
+                  decoded['error']?.toString() ??
+                  decoded['msg']?.toString() ??
+                  errorMessage;
+            }
+          } catch (_) {}
+        }
+        if (response.statusCode == 401) {
+          errorMessage = 'Session expired. Please log in again.';
+        } else if (response.statusCode == 404) {
+          errorMessage = 'Booking not found or already cancelled.';
+        }
+        throw Exception(errorMessage);
       }
     } catch (e) {
       ApiLogger.logError(
-        title: 'CANCEL_RIDE_BOOKING',
+        title: 'CANCEL_CARPOOL_BOOKING',
         url: targetUrl,
         error: e,
       );
-    }
 
-    // Update locally
-    final idx = _bookings.indexWhere((b) => b.id == bookingId);
-    if (idx != -1) {
-      _bookings[idx] = _bookings[idx].copyWith(
-        status: RiderBookingStatus.cancelled,
-      );
+      if (e is SocketException) {
+        throw Exception(
+          'Unable to reach server. Please check your network connection and server status.',
+        );
+      }
+      if (e is HttpException) {
+        throw Exception('Network error during cancellation: ${e.message}');
+      }
+      if (e is Exception) rethrow;
+      throw Exception('Unexpected error during cancellation: $e');
     }
   }
 }

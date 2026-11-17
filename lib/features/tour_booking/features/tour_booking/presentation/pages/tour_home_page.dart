@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/theme/app_typography.dart';
+import 'package:pathway/features/auth/presentation/bloc/auth_bloc.dart';
 
 import '../../core/tour_colors.dart';
 import '../../core/tour_formatters.dart';
@@ -257,8 +259,20 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final top = MediaQuery.of(context).padding.top;
+    final authUser = context.watch<AuthBloc?>()?.state.user;
+    final storageName = AuthLocalStorage().getFullName()?.trim();
+    final displayName = (authUser != null &&
+            authUser.fullName.isNotEmpty &&
+            !authUser.fullName.toLowerCase().startsWith('user'))
+        ? authUser.fullName.split(' ').first
+        : ((storageName != null &&
+                storageName.isNotEmpty &&
+                !storageName.toLowerCase().startsWith('user'))
+            ? storageName.split(' ').first
+            : null);
+
     return SizedBox(
-      height: 336 + top,
+      height: 345 + top,
       child: Stack(
         children: [
           Positioned.fill(
@@ -343,7 +357,33 @@ class _Hero extends StatelessWidget {
                     ),
                   ],
                 ),
-                const SizedBox(height: 30),
+                const SizedBox(height: 20),
+                if (displayName != null) ...[
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          'Hi, $displayName',
+                          overflow: TextOverflow.ellipsis,
+                          style: AppTypography.titleMedium.copyWith(
+                            color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            shadows: [
+                              Shadow(
+                                color: Colors.black.withOpacity(.4),
+                                offset: const Offset(0, 1),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Text('👋', style: TextStyle(fontSize: 16)),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                ],
                 Text(
                   'Explore the\nWorld Together',
                   style: AppTypography.displayLarge.copyWith(

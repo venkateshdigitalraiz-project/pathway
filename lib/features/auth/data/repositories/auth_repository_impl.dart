@@ -1,3 +1,5 @@
+import 'package:pathway/core/storage/auth_local_storage.dart';
+
 import '../../domain/entities/user_profile.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../datasources/auth_local_datasource.dart';
@@ -64,12 +66,20 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<UserProfile> loginWithFacebook() async {
-    final user = const UserProfile(
-      id: 'fb_user_101',
-      firstName: 'Venkatesh',
-      lastName: 'Kumar',
-      email: 'venkatesh@facebook.com',
-      phoneNumber: '+91 9876543210',
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName() ?? '';
+    final savedEmail = storage.getEmail() ?? '';
+    final currentUser = await localDataSource.getUser();
+    final parts = savedName.split(' ');
+    final user = UserProfile(
+      id: currentUser?.id ??
+          'fb_user_${DateTime.now().millisecondsSinceEpoch}',
+      firstName: parts.isNotEmpty && parts.first.isNotEmpty
+          ? parts.first
+          : 'User',
+      lastName: parts.length > 1 ? parts.sublist(1).join(' ') : '',
+      email: savedEmail.isNotEmpty ? savedEmail : (currentUser?.email ?? ''),
+      phoneNumber: currentUser?.phoneNumber ?? '',
       authProvider: 'facebook',
       optOutMarketing: false,
     );
@@ -79,12 +89,20 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<UserProfile> loginWithGoogle() async {
-    final user = const UserProfile(
-      id: 'google_user_102',
-      firstName: 'Venkatesh',
-      lastName: '',
-      email: 'venkatesh@gmail.com',
-      phoneNumber: '+91 9876543210',
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName() ?? '';
+    final savedEmail = storage.getEmail() ?? '';
+    final currentUser = await localDataSource.getUser();
+    final parts = savedName.split(' ');
+    final user = UserProfile(
+      id: currentUser?.id ??
+          'google_user_${DateTime.now().millisecondsSinceEpoch}',
+      firstName: parts.isNotEmpty && parts.first.isNotEmpty
+          ? parts.first
+          : 'User',
+      lastName: parts.length > 1 ? parts.sublist(1).join(' ') : '',
+      email: savedEmail.isNotEmpty ? savedEmail : (currentUser?.email ?? ''),
+      phoneNumber: currentUser?.phoneNumber ?? '',
       authProvider: 'google',
       optOutMarketing: false,
     );
@@ -101,10 +119,10 @@ class AuthRepositoryImpl implements AuthRepository {
   }) async {
     final user = UserProfile(
       id: 'usr_${DateTime.now().millisecondsSinceEpoch}',
-      firstName: firstName.trim().isEmpty ? 'Venkatesh' : firstName.trim(),
+      firstName: firstName.trim().isEmpty ? 'User' : firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim(),
-      phoneNumber: '+91 9876543210',
+      phoneNumber: '',
       authProvider: 'email',
       optOutMarketing: optOutMarketing,
     );
@@ -138,12 +156,17 @@ class AuthRepositoryImpl implements AuthRepository {
     required String lastName,
   }) async {
     final currentUser = await localDataSource.getUser();
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName();
+    final effectiveFirstName = firstName.trim().isNotEmpty
+        ? firstName.trim()
+        : (savedName?.split(' ').first ?? currentUser?.firstName ?? 'User');
     final updated = UserProfile(
       id: currentUser?.id ?? 'usr_${DateTime.now().millisecondsSinceEpoch}',
-      firstName: firstName.trim().isEmpty ? 'Venkatesh' : firstName.trim(),
+      firstName: effectiveFirstName,
       lastName: lastName.trim(),
-      email: currentUser?.email ?? 'rider@pathway.com',
-      phoneNumber: currentUser?.phoneNumber ?? '+91 9876543210',
+      email: currentUser?.email ?? storage.getEmail() ?? '',
+      phoneNumber: currentUser?.phoneNumber ?? '',
       authProvider: currentUser?.authProvider ?? 'phone',
       optOutMarketing: currentUser?.optOutMarketing ?? false,
     );
@@ -180,7 +203,21 @@ class AuthRepositoryImpl implements AuthRepository {
     );
 
     await localDataSource.saveUser(updated);
-    await localDataSource.authStorage.setProfileCompleted(true);
+    await localDataSource.authStorage.saveCustomUserDetails(
+      fullName: trimmedName,
+      email: email.trim(),
+      reference: reference?.trim(),
+      gender: gender.trim(),
+      phone: updated.phoneNumber,
+    );
+    await localDataSource.authStorage.saveUserProfile(
+      updated,
+      phone: updated.phoneNumber,
+    );
+    await localDataSource.authStorage.setProfileCompleted(
+      true,
+      phone: updated.phoneNumber,
+    );
     return updated;
   }
 

@@ -74,6 +74,9 @@ class CarpoolRideEntity extends Equatable {
     this.vehicleNumber,
     this.originCity,
     this.destinationCity,
+    this.rideCode,
+    this.driverPhone,
+    this.notes,
   });
 
   final String id;
@@ -94,6 +97,9 @@ class CarpoolRideEntity extends Equatable {
   final String? vehicleNumber;
   final String? originCity;
   final String? destinationCity;
+  final String? rideCode;
+  final String? driverPhone;
+  final String? notes;
 
   String get displayFromCity =>
       (originCity != null && originCity!.isNotEmpty) ? originCity! : from;
@@ -109,6 +115,9 @@ class CarpoolRideEntity extends Equatable {
     int? totalBookings,
     String? originCity,
     String? destinationCity,
+    String? rideCode,
+    String? driverPhone,
+    String? notes,
   }) {
     return CarpoolRideEntity(
       id: id,
@@ -129,6 +138,9 @@ class CarpoolRideEntity extends Equatable {
       vehicleNumber: vehicleNumber,
       originCity: originCity ?? this.originCity,
       destinationCity: destinationCity ?? this.destinationCity,
+      rideCode: rideCode ?? this.rideCode,
+      driverPhone: driverPhone ?? this.driverPhone,
+      notes: notes ?? this.notes,
     );
   }
 
@@ -152,6 +164,9 @@ class CarpoolRideEntity extends Equatable {
     vehicleNumber,
     originCity,
     destinationCity,
+    rideCode,
+    driverPhone,
+    notes,
   ];
 }
 

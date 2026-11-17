@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import '../../../../core/storage/auth_local_storage.dart';
 import '../../../../core/theme/app_colors.dart';
+import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/entities/dashboard_service_item.dart';
 import '../../domain/entities/recent_activity_entry.dart';
 import '../../../party_booking/presentation/pages/party_shell_page.dart';
@@ -125,27 +127,50 @@ class DashboardHomePage extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     // 1. Organic Wave Blue Header with Charminar
-                    DashboardHeader(
-                      topPadding: topPadding,
-                      userName: data.userName,
-                      locationCity: data.locationCity,
-                      unreadNotifications: data.unreadNotificationsCount,
-                      onLocationTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text('Selected Location: ${data.locationCity}'),
-                            duration: const Duration(seconds: 1),
-                          ),
-                        );
-                      },
-                      onNotificationTap: () {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              'You have ${data.unreadNotificationsCount} unread notifications',
-                            ),
-                            duration: const Duration(seconds: 1),
-                          ),
+                    Builder(
+                      builder: (ctx) {
+                        final authUser = ctx.watch<AuthBloc>().state.user;
+                        final storageName =
+                            AuthLocalStorage().getFullName()?.trim();
+                        final effectiveUserName = (authUser != null &&
+                                authUser.fullName.isNotEmpty &&
+                                !authUser.fullName
+                                    .toLowerCase()
+                                    .startsWith('user'))
+                            ? authUser.fullName.split(' ').first
+                            : ((storageName != null &&
+                                    storageName.isNotEmpty &&
+                                    !storageName
+                                        .toLowerCase()
+                                        .startsWith('user'))
+                                ? storageName.split(' ').first
+                                : data.userName);
+
+                        return DashboardHeader(
+                          topPadding: topPadding,
+                          userName: effectiveUserName,
+                          locationCity: data.locationCity,
+                          unreadNotifications: data.unreadNotificationsCount,
+                          onLocationTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'Selected Location: ${data.locationCity}',
+                                ),
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                          onNotificationTap: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                  'You have ${data.unreadNotificationsCount} unread notifications',
+                                ),
+                                duration: const Duration(seconds: 1),
+                              ),
+                            );
+                          },
                         );
                       },
                     ),

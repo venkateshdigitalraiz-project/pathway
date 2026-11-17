@@ -1,3 +1,4 @@
+import '../entities/accepted_booking_entity.dart';
 import '../entities/carpool_entities.dart';
 import '../entities/carpool_pricing_entity.dart';
 import '../usecases/carpool_calculate_pricing_usecase.dart';
@@ -8,6 +9,8 @@ abstract class CarpoolRepository {
   Future<List<CarpoolPopularRouteEntity>> getPopularRoutes();
   Future<List<CarpoolRideEntity>> searchRides(CarpoolSearchRidesParams params);
   Future<void> bookRide(String rideId);
+  Future<AcceptedBookingEntity> acceptBooking(String bookingId);
+  Future<void> rejectBooking(String bookingId, String reason);
   Future<CarpoolRideEntity> publishRide(CarpoolPublishRideParams params);
   Future<List<CarpoolRideEntity>> getMyRides();
   Future<void> cancelRide(String rideId);

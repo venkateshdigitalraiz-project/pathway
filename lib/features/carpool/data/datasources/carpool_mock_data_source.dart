@@ -4,6 +4,7 @@ import 'package:pathway/core/constants/api_endpoints.dart';
 import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/utils/api_logger.dart';
 
+import '../../domain/entities/accepted_booking_entity.dart';
 import '../../domain/entities/carpool_entities.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
@@ -62,10 +63,29 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
   @override
   Future<CarpoolUserModel> fetchUser() async {
     await _latency();
-    return const CarpoolUserModel(
-      id: 'u1',
-      name: 'Venkatesh',
-      email: 'venkatesh@gmail.com',
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName()?.trim();
+    final savedEmail = storage.getEmail()?.trim();
+    final userProfile = storage.getUserProfile();
+
+    final effectiveName = (savedName != null &&
+            savedName.isNotEmpty &&
+            !savedName.toLowerCase().startsWith('user'))
+        ? savedName
+        : (userProfile != null &&
+                userProfile.fullName.isNotEmpty &&
+                !userProfile.fullName.toLowerCase().startsWith('user'))
+            ? userProfile.fullName
+            : 'Rider';
+
+    final effectiveEmail = (savedEmail != null && savedEmail.isNotEmpty)
+        ? savedEmail
+        : (userProfile?.email.isNotEmpty == true ? userProfile!.email : '');
+
+    return CarpoolUserModel(
+      id: userProfile?.id ?? 'u1',
+      name: effectiveName,
+      email: effectiveEmail,
       rating: 4.9,
       isPremium: true,
     );
@@ -179,6 +199,149 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
 
   @override
   Future<void> bookRide(String rideId) => _latency();
+
+  @override
+  Future<AcceptedBookingEntity> acceptBooking(String bookingId) async {
+    final targetUrl = ApiEndpoints.acceptBooking(bookingId);
+    final uri = Uri.parse(targetUrl);
+
+    final storage = AuthLocalStorage();
+    await storage.init();
+    final token = await storage.getAccessTokenAsync();
+
+    final requestHeaders = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+
+    ApiLogger.logRequest(
+      title: 'ACCEPT_BOOKING',
+      url: targetUrl,
+      method: 'POST',
+      body: '{}',
+      headers: requestHeaders,
+    );
+
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 10);
+      final request = await client
+          .postUrl(uri)
+          .timeout(const Duration(seconds: 10));
+
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (token != null && token.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
+
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+      );
+      final responseBody = await response.transform(utf8.decoder).join();
+
+      ApiLogger.logResponse(
+        title: 'ACCEPT_BOOKING',
+        url: targetUrl,
+        statusCode: response.statusCode,
+        responseBody: responseBody,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
+        return AcceptedBookingEntity.fromJson(decoded);
+      } else {
+        String msg = 'Failed to accept booking';
+        try {
+          final decoded = jsonDecode(responseBody);
+          if (decoded is Map && decoded['message'] != null) {
+            msg = decoded['message'].toString();
+          }
+        } catch (_) {}
+        throw Exception(msg);
+      }
+    } catch (e) {
+      ApiLogger.logError(
+        title: 'ACCEPT_BOOKING',
+        url: targetUrl,
+        error: e,
+      );
+      rethrow;
+    }
+  }
+
+  @override
+  Future<void> rejectBooking(String bookingId, String reason) async {
+    final targetUrl = ApiEndpoints.rejectBooking(bookingId);
+    final uri = Uri.parse(targetUrl);
+    final payloadJson = jsonEncode({'reason': reason});
+
+    final storage = AuthLocalStorage();
+    await storage.init();
+    final token = await storage.getAccessTokenAsync();
+
+    final requestHeaders = <String, String>{
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+    };
+
+    ApiLogger.logRequest(
+      title: 'REJECT_BOOKING',
+      url: targetUrl,
+      method: 'POST',
+      body: payloadJson,
+      headers: requestHeaders,
+    );
+
+    try {
+      final client = HttpClient();
+      client.connectionTimeout = const Duration(seconds: 10);
+      final request = await client
+          .postUrl(uri)
+          .timeout(const Duration(seconds: 10));
+
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.headers.set(HttpHeaders.acceptHeader, 'application/json');
+      if (token != null && token.isNotEmpty) {
+        request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
+      }
+      request.write(payloadJson);
+
+      final response = await request.close().timeout(
+        const Duration(seconds: 10),
+      );
+      final responseBody = await response.transform(utf8.decoder).join();
+
+      ApiLogger.logResponse(
+        title: 'REJECT_BOOKING',
+        url: targetUrl,
+        statusCode: response.statusCode,
+        responseBody: responseBody,
+      );
+
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return;
+      } else {
+        String msg = 'Failed to decline booking';
+        try {
+          final decoded = jsonDecode(responseBody);
+          if (decoded is Map && decoded['message'] != null) {
+            msg = decoded['message'].toString();
+          }
+        } catch (_) {}
+        throw Exception(msg);
+      }
+    } catch (e) {
+      ApiLogger.logError(
+        title: 'REJECT_BOOKING',
+        url: targetUrl,
+        error: e,
+      );
+      rethrow;
+    }
+  }
 
   @override
   Future<CarpoolRideModel> publishRide(CarpoolPublishRideParams p) async {

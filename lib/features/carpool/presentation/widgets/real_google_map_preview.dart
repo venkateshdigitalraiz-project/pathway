@@ -1,7 +1,6 @@
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:pathway/core/utils/carpool_distance_calculator.dart';
-import '../../../../core/utils/carpool_distance_calculator.dart';
 
 /// Clean Architecture Authentic Google Maps Preview Component.
 /// - 100% Crash-Proof Pure Flutter (Eliminates native Android PlatformException).
@@ -545,18 +544,6 @@ class _RealGoogleMapPreviewState extends State<RealGoogleMapPreview> {
         _zoomLevel = _initialZoom;
         _panOffset = Offset.zero;
       }
-    });
-  }
-
-  void _cycleMapType() {
-    setState(() {
-      _currentMapTypeIndex = (_currentMapTypeIndex + 1) % 3;
-    });
-  }
-
-  void _toggleTraffic() {
-    setState(() {
-      _trafficEnabled = !_trafficEnabled;
     });
   }
 

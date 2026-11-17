@@ -20,6 +20,7 @@ class RiderBookingEntity extends Equatable {
     required this.status,
     required this.bookingDate,
     this.vehicleNumber,
+    this.vehicleModel,
     this.otpCode,
     this.passengerNotes,
   });
@@ -39,12 +40,42 @@ class RiderBookingEntity extends Equatable {
   final RiderBookingStatus status;
   final DateTime bookingDate;
   final String? vehicleNumber;
+  final String? vehicleModel;
   final String? otpCode;
   final String? passengerNotes;
+
+  /// Returns the clean vehicle model name (e.g. "Hgigih", "Maruti")
+  String get displayVehicleModel {
+    if (vehicleModel != null && vehicleModel!.trim().isNotEmpty) {
+      return vehicleModel!.trim();
+    }
+    if (vehicle.isNotEmpty) {
+      final parts = vehicle.split('•');
+      final first = parts.first.trim();
+      if (first.isNotEmpty) return first;
+    }
+    return '';
+  }
+
+  /// Returns the vehicle registration number (e.g. "GVJVHCY", "TS45 AK6535")
+  String get displayVehicleNumber {
+    if (vehicleNumber != null && vehicleNumber!.trim().isNotEmpty) {
+      return vehicleNumber!.trim();
+    }
+    if (vehicle.contains('•')) {
+      final parts = vehicle.split('•');
+      if (parts.length > 1) {
+        return parts.last.trim();
+      }
+    }
+    return '';
+  }
 
   RiderBookingEntity copyWith({
     RiderBookingStatus? status,
     String? passengerNotes,
+    String? vehicleModel,
+    String? vehicleNumber,
   }) {
     return RiderBookingEntity(
       id: id,
@@ -61,7 +92,8 @@ class RiderBookingEntity extends Equatable {
       totalAmount: totalAmount,
       status: status ?? this.status,
       bookingDate: bookingDate,
-      vehicleNumber: vehicleNumber,
+      vehicleNumber: vehicleNumber ?? this.vehicleNumber,
+      vehicleModel: vehicleModel ?? this.vehicleModel,
       otpCode: otpCode,
       passengerNotes: passengerNotes ?? this.passengerNotes,
     );
@@ -84,6 +116,7 @@ class RiderBookingEntity extends Equatable {
         status,
         bookingDate,
         vehicleNumber,
+        vehicleModel,
         otpCode,
         passengerNotes,
       ];

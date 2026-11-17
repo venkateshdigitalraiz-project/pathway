@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/theme/app_typography.dart';
 import 'package:pathway/features/auth/presentation/bloc/auth_bloc.dart';
 
@@ -25,18 +26,24 @@ class TourProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Read user from AuthBloc if logged in, otherwise use default traveller info
-    String displayName = 'Venkatesh Kumar';
-    String displayEmail = 'venkatesh@gmail.com';
-    try {
-      final user = context.watch<AuthBloc>().state.user;
-      if (user != null && user.fullName.isNotEmpty) {
-        displayName = user.fullName;
-      }
-      if (user != null && user.email.isNotEmpty) {
-        displayEmail = user.email;
-      }
-    } catch (_) {}
+    final authUser = context.watch<AuthBloc?>()?.state.user;
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName()?.trim();
+    final savedEmail = storage.getEmail()?.trim();
+
+    final displayName = (authUser != null &&
+            authUser.fullName.isNotEmpty &&
+            !authUser.fullName.toLowerCase().startsWith('user'))
+        ? authUser.fullName
+        : ((savedName != null &&
+                savedName.isNotEmpty &&
+                !savedName.toLowerCase().startsWith('user'))
+            ? savedName
+            : 'User');
+
+    final displayEmail = (authUser != null && authUser.email.isNotEmpty)
+        ? authUser.email
+        : ((savedEmail != null && savedEmail.isNotEmpty) ? savedEmail : '');
 
     final bookingsState = context.watch<TourMyBookingsBloc>().state;
     final wishlistState = context.watch<TourWishlistBloc>().state;

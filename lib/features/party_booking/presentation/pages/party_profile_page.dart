@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/theme/app_typography.dart';
 import 'package:pathway/core/theme/party_theme.dart';
 import 'package:pathway/features/auth/presentation/bloc/auth_bloc.dart';
@@ -80,17 +81,25 @@ class PartyProfilePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String displayName = 'Venkatesh Kumar';
-    String displayEmail = 'venkatesh@gmail.com';
-    try {
-      final user = context.watch<AuthBloc>().state.user;
-      if (user != null && user.fullName.isNotEmpty) {
-        displayName = user.fullName;
-      }
-      if (user != null && user.email.isNotEmpty) {
-        displayEmail = user.email;
-      }
-    } catch (_) {}
+    final authUser = context.watch<AuthBloc?>()?.state.user;
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName()?.trim();
+    final savedEmail = storage.getEmail()?.trim();
+
+    final displayName =
+        (authUser != null &&
+            authUser.fullName.isNotEmpty &&
+            !authUser.fullName.toLowerCase().startsWith('user'))
+        ? authUser.fullName
+        : ((savedName != null &&
+                  savedName.isNotEmpty &&
+                  !savedName.toLowerCase().startsWith('user'))
+              ? savedName
+              : 'User');
+
+    final displayEmail = (authUser != null && authUser.email.isNotEmpty)
+        ? authUser.email
+        : ((savedEmail != null && savedEmail.isNotEmpty) ? savedEmail : '');
 
     final bookingsState = context.watch<PartyMyBookingsBloc>().state;
     final favoritesState = context.watch<PartyFavoritesBloc>().state;
@@ -200,7 +209,9 @@ class PartyProfilePage extends StatelessWidget {
                       const SizedBox(height: 10),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 6),
+                          horizontal: 14,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF3F1FB),
                           borderRadius: BorderRadius.circular(16),
@@ -329,8 +340,8 @@ class PartyProfilePage extends StatelessWidget {
                       iconColor: PartyTheme.primary,
                       label: 'Back to Main Dashboard',
                       subtitle: 'Switch to all mobility & services',
-                      onTap: () => Navigator.of(context, rootNavigator: true)
-                          .maybePop(),
+                      onTap: () =>
+                          Navigator.of(context, rootNavigator: true).maybePop(),
                     ),
                     const _Divider(),
                     _MenuTile(
@@ -454,9 +465,7 @@ class _MenuCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(20),
-        child: Column(
-          children: children,
-        ),
+        child: Column(children: children),
       ),
     );
   }
@@ -528,8 +537,10 @@ class _MenuTile extends StatelessWidget {
               ),
               if (badge != null) ...[
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: const Color(0xFF4A21C4),
                     borderRadius: BorderRadius.circular(10),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/features/carpool/presentation/pages/carpool_shell_page.dart';
 import 'package:pathway/features/party_booking/presentation/pages/party_shell_page.dart';
 import 'package:pathway/features/tour_booking/features/tour_booking/presentation/pages/tour_shell_page.dart';
@@ -99,8 +100,11 @@ class _DashboardShellPageState extends State<DashboardShellPage>
             SnackBar(
               content: Row(
                 children: [
-                  const Icon(Icons.error_outline_rounded,
-                      color: Colors.white, size: 22),
+                  const Icon(
+                    Icons.error_outline_rounded,
+                    color: Colors.white,
+                    size: 22,
+                  ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
@@ -396,17 +400,28 @@ class _DashboardShellPageState extends State<DashboardShellPage>
     return BlocBuilder<AuthBloc, AuthState>(
       builder: (context, state) {
         final user = state.user;
-        final displayName = user != null && user.fullName.trim().isNotEmpty
+        final storage = AuthLocalStorage();
+        final savedName = storage.getFullName()?.trim();
+        final savedEmail = storage.getEmail()?.trim();
+
+        final displayName =
+            user != null &&
+                user.fullName.trim().isNotEmpty &&
+                !user.fullName.toLowerCase().startsWith('user')
             ? user.fullName.trim()
-            : (user != null && user.firstName.trim().isNotEmpty
-                ? user.firstName.trim()
-                : 'John Doe');
+            : ((savedName != null &&
+                      savedName.isNotEmpty &&
+                      !savedName.toLowerCase().startsWith('user'))
+                  ? savedName
+                  : (user != null && user.firstName.trim().isNotEmpty
+                        ? user.firstName.trim()
+                        : 'User'));
         final email = user?.email.trim().isNotEmpty == true
             ? user!.email.trim()
-            : 'johndoe@example.com';
+            : ((savedEmail != null && savedEmail.isNotEmpty) ? savedEmail : '');
         final phone = user?.phoneNumber.trim().isNotEmpty == true
             ? user!.phoneNumber.trim()
-            : '+919876543210';
+            : (state.phoneNumber.isNotEmpty ? state.phoneNumber : '');
         final role = user?.role.trim().isNotEmpty == true
             ? user!.role.trim().toUpperCase()
             : 'USER';
@@ -481,12 +496,16 @@ class _DashboardShellPageState extends State<DashboardShellPage>
                                       const SizedBox(width: 6),
                                       Container(
                                         padding: const EdgeInsets.symmetric(
-                                            horizontal: 8, vertical: 2.5),
+                                          horizontal: 8,
+                                          vertical: 2.5,
+                                        ),
                                         decoration: BoxDecoration(
-                                          color: const Color(0xFF0077F6)
-                                              .withAlpha(25),
-                                          borderRadius:
-                                              BorderRadius.circular(6),
+                                          color: const Color(
+                                            0xFF0077F6,
+                                          ).withAlpha(25),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
                                         ),
                                         child: Text(
                                           role,

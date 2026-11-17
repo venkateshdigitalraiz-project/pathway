@@ -50,6 +50,7 @@ class MyRideBookingState extends Equatable {
   final List<RiderBookingEntity> bookings;
   final String? cancellingBookingId;
   final String? message;
+  final bool isError;
 
   const MyRideBookingState({
     this.status = CarpoolStatus.initial,
@@ -58,6 +59,7 @@ class MyRideBookingState extends Equatable {
     this.bookings = const [],
     this.cancellingBookingId,
     this.message,
+    this.isError = false,
   });
 
   List<RiderBookingEntity> get activeBookings =>
@@ -115,6 +117,7 @@ class MyRideBookingState extends Equatable {
     String? cancellingBookingId,
     bool clearCancelling = false,
     String? message,
+    bool? isError,
   }) {
     return MyRideBookingState(
       status: status ?? this.status,
@@ -125,6 +128,7 @@ class MyRideBookingState extends Equatable {
           ? null
           : (cancellingBookingId ?? this.cancellingBookingId),
       message: message,
+      isError: isError ?? this.isError,
     );
   }
 
@@ -136,6 +140,7 @@ class MyRideBookingState extends Equatable {
         bookings,
         cancellingBookingId,
         message,
+        isError,
       ];
 }
 
@@ -197,22 +202,33 @@ class MyRideBookingBloc
     MyRideBookingCancelRequested event,
     Emitter<MyRideBookingState> emit,
   ) async {
-    emit(state.copyWith(cancellingBookingId: event.bookingId));
+    emit(state.copyWith(
+      cancellingBookingId: event.bookingId,
+      message: null,
+      isError: false,
+    ));
     try {
-      await cancelBooking(event.bookingId, reason: event.reason);
+      final successMsg =
+          await cancelBooking(event.bookingId, reason: event.reason);
       final list = await getMyBookings();
       emit(
         state.copyWith(
           clearCancelling: true,
           bookings: list,
-          message: 'Booking cancelled successfully.',
+          message: successMsg ?? 'Booking cancelled successfully',
+          isError: false,
         ),
       );
     } catch (e) {
+      final friendlyMsg =
+          e.toString().replaceFirst(RegExp(r'^Exception:\s*'), '');
       emit(
         state.copyWith(
           clearCancelling: true,
-          message: 'Cancel failed: $e',
+          message: friendlyMsg.isNotEmpty
+              ? friendlyMsg
+              : 'Failed to cancel booking. Please try again.',
+          isError: true,
         ),
       );
     }

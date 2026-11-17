@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pathway/core/utils/carpool_date_time_validator.dart';
 import 'package:pathway/core/utils/carpool_distance_calculator.dart';
 import 'package:pathway/core/utils/carpool_formatters.dart';
 
@@ -171,14 +172,23 @@ class _OfferRideViewState extends State<_OfferRideView> {
 
   Future<void> _pickDate(BuildContext context, CarpoolOfferRideState s) async {
     final now = DateTime.now();
-    final initialDate = _hasSelectedDate
-        ? (s.departure.isBefore(now) ? now : s.departure)
-        : now;
+    final initialDate = CarpoolDateTimeValidator.getInitialDate(
+      selectedDate: s.departure,
+      hasSelectedDate: _hasSelectedDate,
+      now: now,
+    );
+    final firstDate = CarpoolDateTimeValidator.getFirstSelectableDate(now: now);
+    final lastDate = CarpoolDateTimeValidator.getLatestSelectableDate(now: now);
+
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
-      firstDate: DateTime(now.year, now.month, now.day),
-      lastDate: now.add(const Duration(days: 180)),
+      firstDate: firstDate,
+      lastDate: lastDate,
+      selectableDayPredicate: (date) {
+        // Disallow all past dates
+        return !CarpoolDateTimeValidator.isPastDate(date, now: DateTime.now());
+      },
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -195,17 +205,58 @@ class _OfferRideViewState extends State<_OfferRideView> {
     if (picked != null && mounted) {
       context.read<CarpoolOfferRideBloc>().add(CarpoolOfferDateChanged(picked));
       setState(() => _hasSelectedDate = true);
+
+      // Revalidate previously selected time slot against the newly selected date
+      if (_hasSelectedTime) {
+        final currentTime = TimeOfDay(
+          hour: s.departure.hour,
+          minute: s.departure.minute,
+        );
+        final isValidTime = CarpoolDateTimeValidator.isTimeSlotValidForDate(
+          date: picked,
+          time: currentTime,
+          now: DateTime.now(),
+        );
+
+        if (!isValidTime) {
+          // Adjust to next available future slot for today
+          final nextSlot =
+              CarpoolDateTimeValidator.getNextAvailableTime(picked);
+          context.read<CarpoolOfferRideBloc>().add(
+            CarpoolOfferTimeChanged(nextSlot.hour, nextSlot.minute),
+          );
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Departure time updated to next available slot (${nextSlot.format(context)}) for ${CarpoolFormatters.date(picked)}.',
+              ),
+              backgroundColor: const Color(0xFF5D24F7),
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+          );
+        }
+      }
     }
   }
 
   Future<void> _pickTime(BuildContext context, CarpoolOfferRideState s) async {
-    final nowTime = TimeOfDay.now();
-    final initialTime = _hasSelectedTime
-        ? TimeOfDay(
-            hour: s.departure.hour,
-            minute: s.departure.minute,
-          )
-        : nowTime;
+    final now = DateTime.now();
+    final effectiveDate = _hasSelectedDate ? s.departure : now;
+
+    // Calculate initial time: if today, defaults to next available future hourly slot
+    final initialTime = CarpoolDateTimeValidator.getInitialTime(
+      selectedDate: effectiveDate,
+      selectedTime: TimeOfDay(
+        hour: s.departure.hour,
+        minute: s.departure.minute,
+      ),
+      hasSelectedTime: _hasSelectedTime,
+      now: now,
+    );
+
     final picked = await showTimePicker(
       context: context,
       initialTime: initialTime,
@@ -222,7 +273,32 @@ class _OfferRideViewState extends State<_OfferRideView> {
         );
       },
     );
+
     if (picked != null && mounted) {
+      // Validate that the picked time is strictly in the future for the selected date
+      final isValid = CarpoolDateTimeValidator.isTimeSlotValidForDate(
+        date: effectiveDate,
+        time: picked,
+        now: DateTime.now(),
+      );
+
+      if (!isValid) {
+        final formattedNow = CarpoolFormatters.time(DateTime.now());
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Please select a future time. Time must be later than current time ($formattedNow).',
+            ),
+            backgroundColor: const Color(0xFFEF4444),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+          ),
+        );
+        return;
+      }
+
       context.read<CarpoolOfferRideBloc>().add(
         CarpoolOfferTimeChanged(picked.hour, picked.minute),
       );
@@ -877,27 +953,32 @@ class _OfferRideViewState extends State<_OfferRideView> {
                                     return;
                                   }
 
-                                  if (!_hasSelectedDate) {
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          'Please select a date for the ride',
+                                  final dateValidation =
+                                      CarpoolDateTimeValidator.validate(
+                                        date: s.departure,
+                                        time: TimeOfDay(
+                                          hour: s.departure.hour,
+                                          minute: s.departure.minute,
                                         ),
-                                        backgroundColor: Color(0xFF3815D8),
-                                        behavior: SnackBarBehavior.floating,
-                                      ),
-                                    );
-                                    return;
-                                  }
+                                        hasSelectedDate: _hasSelectedDate,
+                                        hasSelectedTime: _hasSelectedTime,
+                                      );
 
-                                  if (!_hasSelectedTime) {
+                                  if (!dateValidation.isValid) {
                                     ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(
+                                      SnackBar(
                                         content: Text(
-                                          'Please select a departure time for the ride',
+                                          dateValidation.errorMessage!,
                                         ),
-                                        backgroundColor: Color(0xFF3815D8),
+                                        backgroundColor: const Color(
+                                          0xFFEF4444,
+                                        ),
                                         behavior: SnackBarBehavior.floating,
+                                        shape: RoundedRectangleBorder(
+                                          borderRadius: BorderRadius.circular(
+                                            14,
+                                          ),
+                                        ),
                                       ),
                                     );
                                     return;

@@ -82,6 +82,9 @@ class CarpoolRideModel extends CarpoolRideEntity {
     super.vehicleNumber,
     super.originCity,
     super.destinationCity,
+    super.rideCode,
+    super.driverPhone,
+    super.notes,
   });
 
   /// Extracts place name, city name, and full address from various formats:
@@ -199,6 +202,13 @@ class CarpoolRideModel extends CarpoolRideEntity {
       driverTrips = (d['totalTrips'] as num?)?.toInt() ??
           (d['trips'] as num?)?.toInt() ??
           driverTrips;
+    } else if (json['publisher'] is Map<String, dynamic>) {
+      final p = json['publisher'] as Map<String, dynamic>;
+      driverName = p['name']?.toString() ?? driverName;
+      driverRating = (p['rating'] as num?)?.toDouble() ?? driverRating;
+      driverTrips = (p['totalTrips'] as num?)?.toInt() ??
+          (p['trips'] as num?)?.toInt() ??
+          driverTrips;
     } else {
       driverName = json['driverName']?.toString() ??
           json['driver']?.toString() ??
@@ -295,6 +305,12 @@ class CarpoolRideModel extends CarpoolRideEntity {
       rideType = CarpoolRideType.premium;
     }
 
+    final rideCode = json['rideCode']?.toString();
+    final driverPhone = (json['publisher'] is Map ? json['publisher']['phone'] : null)?.toString() ??
+        json['driverPhone']?.toString() ??
+        json['phone']?.toString();
+    final notes = json['notes']?.toString();
+
     return CarpoolRideModel(
       id: json['id']?.toString() ??
           json['_id']?.toString() ??
@@ -316,6 +332,9 @@ class CarpoolRideModel extends CarpoolRideEntity {
       vehicleNumber: vehicleNumber,
       originCity: originCity,
       destinationCity: destinationCity,
+      rideCode: rideCode,
+      driverPhone: driverPhone,
+      notes: notes,
     );
   }
 
@@ -338,6 +357,9 @@ class CarpoolRideModel extends CarpoolRideEntity {
         'vehicleNumber': vehicleNumber,
         if (originCity != null) 'originCity': originCity,
         if (destinationCity != null) 'destinationCity': destinationCity,
+        if (rideCode != null) 'rideCode': rideCode,
+        if (driverPhone != null) 'driverPhone': driverPhone,
+        if (notes != null) 'notes': notes,
       };
 
   @override
@@ -347,6 +369,9 @@ class CarpoolRideModel extends CarpoolRideEntity {
     int? totalBookings,
     String? originCity,
     String? destinationCity,
+    String? rideCode,
+    String? driverPhone,
+    String? notes,
   }) =>
       CarpoolRideModel(
         id: id,
@@ -367,6 +392,9 @@ class CarpoolRideModel extends CarpoolRideEntity {
         vehicleNumber: vehicleNumber ?? this.vehicleNumber,
         originCity: originCity ?? this.originCity,
         destinationCity: destinationCity ?? this.destinationCity,
+        rideCode: rideCode ?? this.rideCode,
+        driverPhone: driverPhone ?? this.driverPhone,
+        notes: notes ?? this.notes,
       );
 }
 

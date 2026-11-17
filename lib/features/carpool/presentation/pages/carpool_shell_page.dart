@@ -4,7 +4,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/carpool_core.dart';
 import '../../data/datasources/carpool_mock_data_source.dart';
 import '../../data/repositories/carpool_repository_impl.dart';
+import '../../domain/usecases/accept_booking_usecase.dart';
 import '../../domain/usecases/carpool_usecases.dart';
+import '../../domain/usecases/reject_booking_usecase.dart';
 import '../bloc/carpool_find_ride_bloc.dart';
 import '../bloc/carpool_home_bloc.dart';
 import '../bloc/carpool_messages_bloc.dart';
@@ -38,6 +40,8 @@ class CarpoolShellPage extends StatelessWidget {
           create: (_) => CarpoolHomeBloc(
             getUser: CarpoolGetUserUseCase(repository),
             getPopularRoutes: CarpoolGetPopularRoutesUseCase(repository),
+            acceptBooking: AcceptBookingUseCase(repository),
+            rejectBooking: RejectBookingUseCase(repository),
           )..add(const CarpoolHomeStarted()),
         ),
         BlocProvider<CarpoolFindRideBloc>(

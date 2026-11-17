@@ -137,8 +137,6 @@ class CarpoolMyRideCard extends StatelessWidget {
         return 'Completed';
       case CarpoolRideStatus.cancelled:
         return 'Cancelled';
-      default:
-        return 'Upcoming';
     }
   }
 
@@ -149,7 +147,6 @@ class CarpoolMyRideCard extends StatelessWidget {
       case CarpoolRideStatus.completed:
         return AppColors.success;
       case CarpoolRideStatus.upcoming:
-      default:
         return AppColors.primary;
     }
   }

@@ -1,3 +1,4 @@
+import '../../domain/entities/accepted_booking_entity.dart';
 import '../../domain/entities/carpool_entities.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
@@ -8,6 +9,8 @@ abstract class CarpoolRemoteDataSource {
   Future<List<CarpoolPopularRouteModel>> fetchPopularRoutes();
   Future<List<CarpoolRideModel>> searchRides(CarpoolSearchRidesParams params);
   Future<void> bookRide(String rideId);
+  Future<AcceptedBookingEntity> acceptBooking(String bookingId);
+  Future<void> rejectBooking(String bookingId, String reason);
   Future<CarpoolRideModel> publishRide(CarpoolPublishRideParams params);
   Future<List<CarpoolRideModel>> fetchMyRides();
   Future<void> cancelRide(String rideId);

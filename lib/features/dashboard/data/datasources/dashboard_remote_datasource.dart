@@ -1,3 +1,4 @@
+import '../../../../core/storage/auth_local_storage.dart';
 import '../../domain/entities/active_ride_banner.dart';
 import '../../domain/entities/dashboard_data.dart';
 import '../../domain/entities/dashboard_service_item.dart';
@@ -13,8 +14,17 @@ class DashboardRemoteDataSourceImpl implements DashboardRemoteDataSource {
     // Simulating realistic backend latency
     await Future.delayed(const Duration(milliseconds: 150));
 
-    return const DashboardData(
-      userName: 'Venkatesh',
+    final storage = AuthLocalStorage();
+    final savedName = storage.getFullName()?.trim();
+    final effectiveName =
+        (savedName != null &&
+            savedName.isNotEmpty &&
+            !savedName.toLowerCase().startsWith('user'))
+        ? savedName.split(' ').first
+        : 'User';
+
+    return DashboardData(
+      userName: effectiveName,
       locationCity: 'Current Location',
       unreadNotificationsCount: 2,
       services: [

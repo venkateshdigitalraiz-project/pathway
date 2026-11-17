@@ -4,6 +4,6 @@ class CancelMyRideBookingUseCase {
   final MyRideBookingRepository repository;
   const CancelMyRideBookingUseCase(this.repository);
 
-  Future<void> call(String bookingId, {String? reason}) =>
+  Future<String?> call(String bookingId, {String? reason}) =>
       repository.cancelBooking(bookingId, reason: reason);
 }

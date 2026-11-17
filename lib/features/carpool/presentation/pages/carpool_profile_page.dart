@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:pathway/core/storage/auth_local_storage.dart';
 
 import '../../../auth/presentation/bloc/auth_bloc.dart';
 import '../../../auth/presentation/bloc/auth_event.dart';
@@ -8,7 +9,6 @@ import '../bloc/carpool_profile_bloc.dart';
 import 'carpool_settings_page.dart';
 import 'carpool_wallet_page.dart';
 import 'my_ride_booking_page.dart';
-import 'search_booking_rider_page.dart';
 
 /// CarpoolProfilePage - Matches exact design specifications:
 /// Lavender gradient, top bar with back & settings gear, centered avatar with
@@ -136,14 +136,38 @@ class CarpoolProfilePage extends StatelessWidget {
           bottom: false,
           child: BlocBuilder<CarpoolProfileBloc, CarpoolProfileState>(
             builder: (context, s) {
-              final user = s.user;
-              final displayName = (user != null && user.name.isNotEmpty)
-                  ? user.name
-                  : 'Venkatesh';
-              final displayEmail = (user != null && user.email.isNotEmpty)
-                  ? user.email
-                  : 'venkatesh@gmail.com';
-              final isPremium = user?.isPremium ?? true;
+              final authUser = context.watch<AuthBloc?>()?.state.user;
+              final storage = AuthLocalStorage();
+              final savedFullName = storage.getFullName()?.trim();
+              final savedEmail = storage.getEmail()?.trim();
+
+              final displayName =
+                  (authUser != null &&
+                      authUser.fullName.isNotEmpty &&
+                      !authUser.fullName.toLowerCase().startsWith('user'))
+                  ? authUser.fullName
+                  : ((savedFullName != null &&
+                            savedFullName.isNotEmpty &&
+                            !savedFullName.toLowerCase().startsWith('user'))
+                        ? savedFullName
+                        : ((s.user != null &&
+                                  s.user!.name.isNotEmpty &&
+                                  !s.user!.name.toLowerCase().startsWith(
+                                    'user',
+                                  ))
+                              ? s.user!.name
+                              : 'Rider'));
+
+              final displayEmail =
+                  (authUser != null && authUser.email.isNotEmpty)
+                  ? authUser.email
+                  : ((savedEmail != null && savedEmail.isNotEmpty)
+                        ? savedEmail
+                        : (s.user?.email.isNotEmpty == true
+                              ? s.user!.email
+                              : ''));
+
+              final isPremium = s.user?.isPremium ?? true;
 
               return ListView(
                 padding: const EdgeInsets.only(bottom: 28),

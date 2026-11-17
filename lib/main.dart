@@ -28,12 +28,16 @@ import 'features/dashboard/data/repositories/dashboard_repository_impl.dart';
 import 'features/dashboard/domain/usecases/get_dashboard_data_usecase.dart';
 import 'features/dashboard/presentation/bloc/dashboard_bloc.dart';
 import 'features/dashboard/presentation/bloc/dashboard_event.dart';
+import 'core/socket/socket.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final storedLocal = StoredLocal();
   await storedLocal.init();
   final initialUser = await storedLocal.getUser();
+
+  // Initialize and connect socket service
+  SocketService().connect();
 
   runApp(PathwayApp(initialUser: initialUser, storedLocal: storedLocal));
 }

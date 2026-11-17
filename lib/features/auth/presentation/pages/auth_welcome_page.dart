@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:pathway/core/storage/auth_local_storage.dart';
 import '../../../../core/router/app_router.dart';
 import '../../../../core/theme/app_colors.dart';
 import '../../../../core/theme/app_typography.dart';
@@ -153,8 +154,11 @@ class _AuthWelcomePageState extends State<AuthWelcomePage> {
               SnackBar(
                 content: Row(
                   children: [
-                    const Icon(Icons.error_outline_rounded,
-                        color: Colors.white, size: 22),
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -184,8 +188,11 @@ class _AuthWelcomePageState extends State<AuthWelcomePage> {
               SnackBar(
                 content: Row(
                   children: [
-                    const Icon(Icons.check_circle_outline_rounded,
-                        color: Colors.white, size: 22),
+                    const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: Colors.white,
+                      size: 22,
+                    ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
@@ -208,10 +215,34 @@ class _AuthWelcomePageState extends State<AuthWelcomePage> {
               ),
             );
           }
-          if (state.status == AuthStatus.requireUserDetails ||
-              (state.status == AuthStatus.authenticated && state.isFirstTime)) {
+          final storage = AuthLocalStorage();
+          final isProfileDone = storage.isProfileCompleted(state.phoneNumber);
+          final savedName =
+              storage.getFullName(state.phoneNumber)?.trim() ?? '';
+          final currentName = state.user?.fullName.trim() ?? '';
+          final effectiveName =
+              (savedName.isNotEmpty &&
+                  !savedName.toLowerCase().startsWith('user'))
+              ? savedName
+              : currentName;
+
+          final bool hasValidFullName =
+              effectiveName.isNotEmpty &&
+              effectiveName.toLowerCase() != 'user' &&
+              !effectiveName.toLowerCase().startsWith('user ') &&
+              !RegExp(
+                r'^user[\s_-]*\d*$',
+                caseSensitive: false,
+              ).hasMatch(effectiveName);
+
+          final bool profileCompleted = isProfileDone && hasValidFullName;
+
+          if (!profileCompleted &&
+              (state.status == AuthStatus.requireUserDetails ||
+                  state.status == AuthStatus.authenticated)) {
             context.go(AppRoutes.userDetails);
-          } else if (state.status == AuthStatus.authenticated) {
+          } else if (state.status == AuthStatus.authenticated &&
+              profileCompleted) {
             context.go(AppRoutes.main);
           }
         },

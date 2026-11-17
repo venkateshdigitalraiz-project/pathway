@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import 'package:pathway/core/storage/auth_local_storage.dart';
 import 'package:pathway/core/utils/party_formatters.dart';
 import 'package:pathway/core/utils/party_status.dart';
+import 'package:pathway/features/auth/presentation/bloc/auth_bloc.dart';
 import '../../domain/entities/party_entities.dart';
 import '../bloc/party_favorites_bloc.dart';
 import '../bloc/party_home_bloc.dart';
@@ -146,7 +148,19 @@ class _PartyHeroBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final topPadding = MediaQuery.of(context).padding.top;
-    final heroHeight = 330.0 + topPadding;
+    final heroHeight = 345.0 + topPadding;
+
+    final authUser = context.watch<AuthBloc?>()?.state.user;
+    final storageName = AuthLocalStorage().getFullName()?.trim();
+    final displayName = (authUser != null &&
+            authUser.fullName.isNotEmpty &&
+            !authUser.fullName.toLowerCase().startsWith('user'))
+        ? authUser.fullName.split(' ').first
+        : ((storageName != null &&
+                storageName.isNotEmpty &&
+                !storageName.toLowerCase().startsWith('user'))
+            ? storageName.split(' ').first
+            : null);
 
     return ClipPath(
       clipper: const PartyHeroClipper(),
@@ -292,7 +306,29 @@ class _PartyHeroBanner extends StatelessWidget {
                     ],
                   ),
 
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 20),
+
+                  if (displayName != null) ...[
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            'Hi, $displayName',
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: Colors.white.withOpacity(0.92),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text('👋', style: TextStyle(fontSize: 15)),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                  ],
 
                   // Heading: "Make Your\nParty Special"
                   const Text(

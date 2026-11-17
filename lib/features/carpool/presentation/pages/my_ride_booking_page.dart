@@ -14,9 +14,9 @@ class MyRideBookingPage extends StatelessWidget {
   const MyRideBookingPage({super.key});
 
   static Future<void> show(BuildContext context) {
-    return Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const MyRideBookingPage()),
-    );
+    return Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const MyRideBookingPage()));
   }
 
   @override
@@ -53,8 +53,9 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(msg),
-        backgroundColor:
-            isError ? const Color(0xFFEF4444) : const Color(0xFF5D24F7),
+        backgroundColor: isError
+            ? const Color(0xFFEF4444)
+            : const Color(0xFF5D24F7),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
@@ -82,14 +83,6 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Are you sure you want to cancel your seat with ${booking.driverName} from ${booking.from} to ${booking.to}?',
-              style: const TextStyle(
-                color: Color(0xFF6B658C),
-                fontSize: 13.5,
-                height: 1.4,
-              ),
-            ),
             const SizedBox(height: 14),
             TextField(
               controller: reasonCtrl,
@@ -161,7 +154,7 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
       bloc.add(
         MyRideBookingCancelRequested(
           booking.id,
-          reason: reason.isNotEmpty ? reason : null,
+          reason: reason.isNotEmpty ? reason : 'Travel plans changed',
         ),
       );
     }
@@ -244,7 +237,11 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                       ],
                     ),
                     Padding(
-                      padding: const EdgeInsets.only(left: 7, top: 3, bottom: 3),
+                      padding: const EdgeInsets.only(
+                        left: 7,
+                        top: 3,
+                        bottom: 3,
+                      ),
                       child: Align(
                         alignment: Alignment.centerLeft,
                         child: Container(
@@ -291,8 +288,9 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                   children: [
                     CircleAvatar(
                       radius: 22,
-                      backgroundColor:
-                          const Color(0xFF5D24F7).withOpacity(0.12),
+                      backgroundColor: const Color(
+                        0xFF5D24F7,
+                      ).withOpacity(0.12),
                       child: Text(
                         booking.driverName.isNotEmpty
                             ? booking.driverName[0].toUpperCase()
@@ -348,7 +346,51 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                               ),
                             ),
                           ],
-                          if (booking.vehicle.isNotEmpty) ...[
+                          if (booking.displayVehicleModel.isNotEmpty ||
+                              booking.displayVehicleNumber.isNotEmpty) ...[
+                            const SizedBox(height: 3),
+                            Row(
+                              children: [
+                                const Icon(
+                                  Icons.directions_car_rounded,
+                                  size: 13,
+                                  color: Color(0xFF5D24F7),
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  booking.displayVehicleModel.isNotEmpty
+                                      ? booking.displayVehicleModel
+                                      : 'Car',
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF140D43),
+                                  ),
+                                ),
+                                if (booking.displayVehicleNumber.isNotEmpty) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 1.5,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEDE8FF),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      booking.displayVehicleNumber,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF5D24F7),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ] else if (booking.vehicle.isNotEmpty) ...[
                             const SizedBox(height: 2),
                             Text(
                               booking.vehicleNumber != null &&
@@ -405,6 +447,33 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                     CarpoolFormatters.rupee(booking.totalAmount),
                     Icons.payments_rounded,
                     valueColor: const Color(0xFF5D24F7),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 12),
+
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildDetailTile(
+                      'Vehicle Model',
+                      booking.displayVehicleModel.isNotEmpty
+                          ? booking.displayVehicleModel
+                          : 'Car',
+                      Icons.directions_car_rounded,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _buildDetailTile(
+                      'Vehicle Number',
+                      booking.displayVehicleNumber.isNotEmpty
+                          ? booking.displayVehicleNumber
+                          : 'Not Provided',
+                      Icons.pin_rounded,
+                      valueColor: const Color(0xFF5D24F7),
+                    ),
                   ),
                 ],
               ),
@@ -649,8 +718,15 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
         child: SafeArea(
           bottom: false,
           child: BlocConsumer<MyRideBookingBloc, MyRideBookingState>(
-            listenWhen: (p, c) => c.message != null && p.message != c.message,
-            listener: (context, s) => _snack(context, s.message!),
+            listenWhen: (p, c) =>
+                c.message != null &&
+                (p.message != c.message ||
+                    p.cancellingBookingId != c.cancellingBookingId),
+            listener: (context, s) {
+              if (s.message != null && s.message!.isNotEmpty) {
+                _snack(context, s.message!, isError: s.isError);
+              }
+            },
             builder: (context, s) {
               return Column(
                 children: [
@@ -721,9 +797,12 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                               Color(0xFFE8FDF3),
                               Color(0xFFF3FEF8),
                             ],
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(1),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: _buildMetricCard(
                             title: 'Completed',
@@ -734,9 +813,28 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                               Color(0xFFEDE8FF),
                               Color(0xFFF7F5FE),
                             ],
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(2),
+                            ),
                           ),
                         ),
-                        const SizedBox(width: 10),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: _buildMetricCard(
+                            title: 'Cancelled',
+                            count: '${s.cancelledCount}',
+                            icon: Icons.cancel_rounded,
+                            color: const Color(0xFFEF4444),
+                            bgGradient: const [
+                              Color(0xFFFEF2F2),
+                              Color(0xFFFFF5F5),
+                            ],
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(3),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
                         Expanded(
                           child: _buildMetricCard(
                             title: 'Total Spent',
@@ -788,13 +886,9 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                                   ),
                                   onPressed: () {
                                     _searchCtrl.clear();
-                                    context
-                                        .read<MyRideBookingBloc>()
-                                        .add(
-                                          const MyRideBookingSearchQueryChanged(
-                                            '',
-                                          ),
-                                        );
+                                    context.read<MyRideBookingBloc>().add(
+                                      const MyRideBookingSearchQueryChanged(''),
+                                    );
                                   },
                                 )
                               : null,
@@ -819,33 +913,33 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                           _buildFilterPill(
                             label: 'All (${s.totalCount})',
                             isSelected: s.tabIndex == 0,
-                            onTap: () => context
-                                .read<MyRideBookingBloc>()
-                                .add(const MyRideBookingTabChanged(0)),
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(0),
+                            ),
                           ),
                           const SizedBox(width: 8),
                           _buildFilterPill(
                             label: 'Active (${s.activeCount})',
                             isSelected: s.tabIndex == 1,
-                            onTap: () => context
-                                .read<MyRideBookingBloc>()
-                                .add(const MyRideBookingTabChanged(1)),
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(1),
+                            ),
                           ),
                           const SizedBox(width: 8),
                           _buildFilterPill(
                             label: 'Completed (${s.completedCount})',
                             isSelected: s.tabIndex == 2,
-                            onTap: () => context
-                                .read<MyRideBookingBloc>()
-                                .add(const MyRideBookingTabChanged(2)),
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(2),
+                            ),
                           ),
                           const SizedBox(width: 8),
                           _buildFilterPill(
                             label: 'Cancelled (${s.cancelledCount})',
                             isSelected: s.tabIndex == 3,
-                            onTap: () => context
-                                .read<MyRideBookingBloc>()
-                                .add(const MyRideBookingTabChanged(3)),
+                            onTap: () => context.read<MyRideBookingBloc>().add(
+                              const MyRideBookingTabChanged(3),
+                            ),
                           ),
                         ],
                       ),
@@ -856,8 +950,8 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
 
                   // Main List
                   Expanded(
-                    child: s.status == CarpoolStatus.loading &&
-                            s.bookings.isEmpty
+                    child:
+                        s.status == CarpoolStatus.loading && s.bookings.isEmpty
                         ? const Center(
                             child: CircularProgressIndicator(
                               color: Color(0xFF5D24F7),
@@ -866,9 +960,9 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                         : RefreshIndicator(
                             color: const Color(0xFF5D24F7),
                             onRefresh: () async {
-                              context
-                                  .read<MyRideBookingBloc>()
-                                  .add(const MyRideBookingRefreshed());
+                              context.read<MyRideBookingBloc>().add(
+                                const MyRideBookingRefreshed(),
+                              );
                             },
                             child: s.filteredBookings.isEmpty
                                 ? _buildEmptyState(context, s.tabIndex)
@@ -883,16 +977,16 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                                     itemBuilder: (context, idx) {
                                       final item = s.filteredBookings[idx];
                                       return Padding(
-                                        padding:
-                                            const EdgeInsets.only(bottom: 14),
+                                        padding: const EdgeInsets.only(
+                                          bottom: 14,
+                                        ),
                                         child: _MyRideBookingItemCard(
                                           booking: item,
                                           isCancelling:
                                               s.cancellingBookingId == item.id,
                                           onCancel: () =>
                                               _confirmCancel(context, item),
-                                          onTap: () =>
-                                              _showBookingDetailsSheet(
+                                          onTap: () => _showBookingDetailsSheet(
                                             context,
                                             item,
                                           ),
@@ -917,9 +1011,10 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
     required IconData icon,
     required Color color,
     required List<Color> bgGradient,
+    VoidCallback? onTap,
   }) {
-    return Container(
-      padding: const EdgeInsets.all(10),
+    final card = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: bgGradient,
@@ -935,29 +1030,47 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                  color: Color(0xFF6B658C),
+              Flexible(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF6B658C),
+                  ),
                 ),
               ),
-              Icon(icon, size: 14, color: color),
+              const SizedBox(width: 2),
+              Icon(icon, size: 13, color: color),
             ],
           ),
           const SizedBox(height: 4),
-          Text(
-            count,
-            style: TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-              color: color,
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              count,
+              style: TextStyle(
+                fontSize: 14.5,
+                fontWeight: FontWeight.w900,
+                color: color,
+              ),
             ),
           ),
         ],
       ),
     );
+
+    if (onTap != null) {
+      return InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: card,
+      );
+    }
+    return card;
   }
 
   Widget _buildFilterPill({
@@ -974,8 +1087,9 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
           color: isSelected ? const Color(0xFF5D24F7) : Colors.white,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color:
-                isSelected ? const Color(0xFF5D24F7) : const Color(0xFFEDE8FF),
+            color: isSelected
+                ? const Color(0xFF5D24F7)
+                : const Color(0xFFEDE8FF),
           ),
           boxShadow: isSelected
               ? [
@@ -1054,13 +1168,14 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               elevation: 0,
             ),
-            icon: const Icon(Icons.search_rounded, color: Colors.white, size: 18),
+            icon: const Icon(
+              Icons.search_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
             label: const Text(
               'Search & Book Rides',
               style: TextStyle(
@@ -1093,6 +1208,9 @@ class _MyRideBookingItemCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isConfirmed = booking.status == RiderBookingStatus.confirmed;
+    final displayModel = booking.displayVehicleModel;
+    final displayNumber = booking.displayVehicleNumber;
+    final hasVehicle = displayModel.isNotEmpty || displayNumber.isNotEmpty;
 
     return Container(
       decoration: BoxDecoration(
@@ -1143,7 +1261,9 @@ class _MyRideBookingItemCard extends StatelessWidget {
                             children: [
                               Flexible(
                                 child: Text(
-                                  booking.driverName,
+                                  booking.driverName.isNotEmpty
+                                      ? booking.driverName
+                                      : 'Driver',
                                   style: const TextStyle(
                                     fontSize: 14.5,
                                     fontWeight: FontWeight.w800,
@@ -1170,8 +1290,8 @@ class _MyRideBookingItemCard extends StatelessWidget {
                               ],
                             ],
                           ),
-                          if (booking.driverPhone.isNotEmpty) ...[
-                            const SizedBox(height: 1),
+                          const SizedBox(height: 1),
+                          if (booking.driverPhone.isNotEmpty)
                             Text(
                               booking.driverPhone,
                               style: const TextStyle(
@@ -1179,26 +1299,35 @@ class _MyRideBookingItemCard extends StatelessWidget {
                                 fontWeight: FontWeight.w500,
                                 color: Color(0xFF6B658C),
                               ),
-                            ),
-                          ] else if (booking.vehicle.isNotEmpty) ...[
-                            const SizedBox(height: 1),
+                            )
+                          else if (displayModel.isNotEmpty)
                             Text(
-                              booking.vehicleNumber != null &&
-                                      booking.vehicleNumber!.isNotEmpty
-                                  ? '${booking.vehicle} • ${booking.vehicleNumber}'
-                                  : booking.vehicle,
+                              displayNumber.isNotEmpty
+                                  ? '$displayModel • $displayNumber'
+                                  : displayModel,
                               style: const TextStyle(
                                 fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
                                 color: Color(0xFF6B658C),
                               ),
+                            )
+                          else
+                            const Text(
+                              'Verified Pathway Ride',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF8B85A8),
+                              ),
                             ),
-                          ],
                         ],
                       ),
                     ),
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
+                        _buildStatusChip(booking.status),
+                        const SizedBox(height: 4),
                         Text(
                           CarpoolFormatters.rupee(booking.totalAmount),
                           style: const TextStyle(
@@ -1219,6 +1348,127 @@ class _MyRideBookingItemCard extends StatelessWidget {
                     ),
                   ],
                 ),
+
+                // Vehicle Information Strip (Vehicle Model & Vehicle Registration Number)
+                if (hasVehicle) ...[
+                  const SizedBox(height: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      gradient: const LinearGradient(
+                        colors: [Color(0xFFF6F3FF), Color(0xFFFAF9FE)],
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                      ),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFEDE8FF)),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF5D24F7).withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(
+                            Icons.directions_car_rounded,
+                            size: 14,
+                            color: Color(0xFF5D24F7),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (displayModel.isNotEmpty) ...[
+                          Text(
+                            displayModel,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: Color(0xFF140D43),
+                            ),
+                          ),
+                        ],
+                        if (displayNumber.isNotEmpty) ...[
+                          if (displayModel.isNotEmpty)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(horizontal: 6),
+                              child: Text(
+                                '•',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF8B85A8),
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(6),
+                              border: Border.all(
+                                color: const Color(0xFFDDD6FE),
+                                width: 1,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: const Color(0xFF5D24F7).withOpacity(0.04),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.tag_rounded,
+                                  size: 11,
+                                  color: Color(0xFF5D24F7),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  displayNumber,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: 0.6,
+                                    color: Color(0xFF5D24F7),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEDE8FF),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: const Text(
+                            'Vehicle',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF5D24F7),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
 
                 const SizedBox(height: 10),
 
@@ -1407,18 +1657,35 @@ class _MyRideBookingItemCard extends StatelessWidget {
                               : const Color(0xFFFEF2F2),
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Text(
-                          booking.status == RiderBookingStatus.completed
-                              ? 'Completed'
-                              : 'Cancelled',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: booking.status ==
-                                    RiderBookingStatus.completed
-                                ? const Color(0xFF2563EB)
-                                : const Color(0xFFDC2626),
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              booking.status == RiderBookingStatus.completed
+                                  ? Icons.task_alt_rounded
+                                  : Icons.cancel_rounded,
+                              size: 11,
+                              color:
+                                  booking.status == RiderBookingStatus.completed
+                                      ? const Color(0xFF2563EB)
+                                      : const Color(0xFFDC2626),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              booking.status == RiderBookingStatus.completed
+                                  ? 'Completed'
+                                  : 'Cancelled',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color:
+                                    booking.status ==
+                                            RiderBookingStatus.completed
+                                        ? const Color(0xFF2563EB)
+                                        : const Color(0xFFDC2626),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
                   ],
@@ -1427,6 +1694,57 @@ class _MyRideBookingItemCard extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(RiderBookingStatus status) {
+    Color bg;
+    Color fg;
+    String label;
+    IconData icon;
+
+    switch (status) {
+      case RiderBookingStatus.confirmed:
+        bg = const Color(0xFFECFDF5);
+        fg = const Color(0xFF059669);
+        label = 'Confirmed';
+        icon = Icons.check_circle_rounded;
+        break;
+      case RiderBookingStatus.completed:
+        bg = const Color(0xFFEFF6FF);
+        fg = const Color(0xFF2563EB);
+        label = 'Completed';
+        icon = Icons.task_alt_rounded;
+        break;
+      case RiderBookingStatus.cancelled:
+        bg = const Color(0xFFFEF2F2);
+        fg = const Color(0xFFDC2626);
+        label = 'Cancelled';
+        icon = Icons.cancel_rounded;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 10, color: fg),
+          const SizedBox(width: 3.5),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: fg,
+            ),
+          ),
+        ],
       ),
     );
   }
