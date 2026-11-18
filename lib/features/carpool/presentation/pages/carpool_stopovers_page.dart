@@ -10,6 +10,7 @@ import '../../domain/entities/place_prediction_entity.dart';
 import '../../domain/usecases/get_place_predictions_usecase.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
 import 'carpool_ride_summary_page.dart';
+import 'carpool_schedule_ride_page.dart';
 
 /// Clean Architecture CarpoolStopoversPage – Route-Based Nearby City Suggestions.
 /// Inserted between [CarpoolPublishRidePage] and [CarpoolRideSummaryPage].
@@ -27,6 +28,18 @@ class CarpoolStopoversPage extends StatelessWidget {
   final CarpoolOfferRideBloc? bloc;
 
   const CarpoolStopoversPage({super.key, this.bloc});
+
+  /// Navigates to [CarpoolStopoversPage] safely on the root navigator.
+  static Future<void> show(BuildContext context, CarpoolOfferRideBloc bloc) {
+    return Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute(
+        builder: (_) => BlocProvider.value(
+          value: bloc,
+          child: CarpoolStopoversPage(bloc: bloc),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -340,11 +353,7 @@ class _StopoversViewState extends State<_StopoversView> {
 
   void _onContinue(BuildContext context) {
     final bloc = context.read<CarpoolOfferRideBloc>();
-    CarpoolRideSummaryPage.show(
-      context,
-      bloc,
-      pricing: bloc.state.pricingCalculation,
-    );
+    CarpoolScheduleRidePage.show(context, bloc);
   }
 
   @override

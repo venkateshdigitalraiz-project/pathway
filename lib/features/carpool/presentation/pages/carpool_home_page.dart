@@ -15,6 +15,7 @@ import '../bloc/carpool_nav_cubit.dart';
 import 'carpool_find_ride_page.dart';
 import 'carpool_offer_ride_page.dart';
 import 'carpool_publish_ride_page.dart';
+import 'carpool_blabla_location_picker_page.dart';
 import 'start_ride_page.dart';
 import '../../domain/entities/available_rider_entity.dart';
 import '../../domain/entities/carpool_entities.dart';
@@ -91,7 +92,7 @@ class _CarpoolHomeView extends StatelessWidget {
   }
 
   void _openPublishRide(BuildContext context) {
-    CarpoolPublishRidePage.show(context);
+    CarpoolBlaBlaLocationPickerPage.show(context);
   }
 
   void _openOfferRide(BuildContext context) {

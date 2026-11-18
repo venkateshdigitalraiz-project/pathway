@@ -7,6 +7,7 @@ import 'package:pathway/core/utils/api_logger.dart';
 import '../../domain/entities/accepted_booking_entity.dart';
 import '../../domain/entities/carpool_entities.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
+import '../../domain/entities/rejected_booking_entity.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
 import '../models/carpool_models.dart';
 import 'carpool_remote_data_source.dart';
@@ -272,7 +273,8 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
   }
 
   @override
-  Future<void> rejectBooking(String bookingId, String reason) async {
+  Future<RejectedBookingEntity> rejectBooking(
+      String bookingId, String reason) async {
     final targetUrl = ApiEndpoints.rejectBooking(bookingId);
     final uri = Uri.parse(targetUrl);
     final payloadJson = jsonEncode({'reason': reason});
@@ -322,7 +324,8 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
       );
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        return;
+        final decoded = jsonDecode(responseBody) as Map<String, dynamic>;
+        return RejectedBookingEntity.fromJson(decoded);
       } else {
         String msg = 'Failed to decline booking';
         try {

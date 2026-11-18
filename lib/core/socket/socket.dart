@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'package:flutter/foundation.dart';
 import 'package:socket_io_client/socket_io_client.dart' as io;
@@ -11,8 +12,11 @@ import '../storage/auth_local_storage.dart';
 /// - Singleton pattern — one socket for the entire app session.
 /// - Connects with JWT auth token from [AuthLocalStorage].
 /// - Configurable automatic reconnection with exponential back-off capped at 5s.
+/// - Wildcard listener ([onAny]) to log and process EVERY incoming server event.
+/// - Full logging whenever events are RAISED (emitted) or RECEIVED.
+/// - Automatically joins driver & user rooms on connect/reconnect.
 /// - Broadcasts connection status via [onConnected] stream.
-/// - Broadcasts [BOOKING_CREATED] events via [onBookingCreated] stream.
+/// - Broadcasts booking creation events via [onBookingCreated] stream.
 /// - Safe [disconnectFully] tears down the socket and all handlers cleanly.
 class SocketService {
   // ──────────────────────────────────────────────
@@ -25,8 +29,16 @@ class SocketService {
   // ──────────────────────────────────────────────
   //  Socket Event Constants
   // ──────────────────────────────────────────────
-  /// Key event for booking creation: send & receive between Flutter app and backend
+  /// Standard booking creation event names
   static const String eventBookingCreated = 'BOOKING_CREATED';
+  static const String eventBookingCreatedLower = 'booking_created';
+  static const String eventBookingCreatedColon = 'booking:created';
+  static const String eventBookingRequest = 'BOOKING_REQUEST';
+  static const String eventBookingRequestLower = 'booking_request';
+  static const String eventNewBooking = 'new_booking';
+  static const String eventRideNewAvailable = 'ride:new_available';
+  static const String eventRideBooked = 'ride_booked';
+  static const String eventSlotBooked = 'slot_booked';
 
   // ──────────────────────────────────────────────
   //  Internal state
@@ -46,9 +58,13 @@ class SocketService {
   final _disconnectedController = StreamController<String>.broadcast();
   Stream<String> get onDisconnected => _disconnectedController.stream;
 
-  /// Fires every time a 'BOOKING_CREATED' event is received from the server.
+  /// Fires every time a booking event is received from the server.
   final _bookingCreatedController = StreamController<dynamic>.broadcast();
   Stream<dynamic> get onBookingCreated => _bookingCreatedController.stream;
+
+  /// Fires every time any socket event is received from the server.
+  final _anyEventController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get onAnyEvent => _anyEventController.stream;
 
   // ──────────────────────────────────────────────
   //  Accessors
@@ -105,24 +121,117 @@ class SocketService {
   }
 
   // ──────────────────────────────────────────────
-  //  Public API: 2. Emit
+  //  Public API: 2. Emit & Raise Events
   // ──────────────────────────────────────────────
 
-  /// Emits an event on the socket (no-op if not connected).
+  /// Formats any payload into pretty-printed multi-line JSON or formatted text.
+  String _formatData(dynamic data) {
+    if (data == null) return '   (null)';
+    try {
+      if (data is Map || data is List) {
+        return const JsonEncoder.withIndent('     ').convert(data);
+      }
+      final decoded = jsonDecode(data.toString());
+      return const JsonEncoder.withIndent('     ').convert(decoded);
+    } catch (_) {
+      return '     $data';
+    }
+  }
+
+  /// Emits an event on the socket with full debug printing (no-op if not connected).
   void emit(String event, dynamic data) {
     if (!isConnected) {
-      _printLog('⚠️ [SocketService] emit("$event") skipped — not connected.');
+      _printLog('⚠️ [SocketService] emit("$event") skipped — socket is not connected.');
       return;
     }
-    _printLog('🚀 [SocketService] Emitting "$event" with data: $data');
+
+    final profile = _storageService.getUserProfile();
+    final driverName = profile?.fullName ?? _storageService.getFullName() ?? 'Driver';
+    final driverPhone = profile?.phoneNumber ?? '+91 9876543210';
+    final formattedPayload = _formatData(data);
+
+    final sb = StringBuffer();
+    sb.writeln('\n══════════════════════════════════════════════════════════════════════════');
+    sb.writeln('🚀 [SOCKET EVENT RAISED / EMITTED BY CLIENT]');
+    sb.writeln('──────────────────────────────────────────────────────────────────────────');
+    sb.writeln('   • EVENT NAME    : "$event"');
+    sb.writeln('   • SOCKET ID     : ${_socket?.id ?? "unknown"}');
+    sb.writeln('   • SERVER URL    : ${ApiEndpoints.socketUrl}');
+    sb.writeln('   • DRIVER NAME   : $driverName');
+    sb.writeln('   • DRIVER PHONE  : $driverPhone');
+    sb.writeln('   • TIMESTAMP     : ${DateTime.now().toIso8601String()}');
+    sb.writeln('──────────────────────────────────────────────────────────────────────────');
+    sb.writeln('   • FULL DATA PAYLOAD:');
+    sb.writeln(formattedPayload);
+    sb.writeln('══════════════════════════════════════════════════════════════════════════\n');
+
+    _printLog(sb.toString());
     _socket!.emit(event, data);
   }
 
-  /// Dedicated emit helper for `BOOKING_CREATED`.
+  /// Dedicated emit helper for booking creation.
   ///
-  /// Sends the booking data payload to the backend under the `BOOKING_CREATED` key.
+  /// Sends the booking data payload to the backend under multiple standard event keys.
   void emitBookingCreated(dynamic data) {
+    _printLog('📢 [SocketService] Raising booking created event across standard socket keys...');
     emit(eventBookingCreated, data);
+    emit(eventBookingCreatedLower, data);
+    emit(eventNewBooking, data);
+    emit(eventRideNewAvailable, data);
+  }
+
+  /// Joins the driver and user rooms so backend broadcasts directed to driverId or userId are received.
+  void joinDriverRooms([String? explicitDriverId]) {
+    try {
+      String? driverId = explicitDriverId;
+      if (driverId == null || driverId.isEmpty) {
+        final profile = _storageService.getUserProfile();
+        driverId = profile?.id;
+      }
+      if (driverId == null || driverId.isEmpty) {
+        final userData = _storageService.getUserData();
+        driverId = userData?['id']?.toString() ?? userData?['_id']?.toString();
+      }
+
+      // If still empty, attempt to extract 'id' from stored JWT token payload
+      if (driverId == null || driverId.isEmpty) {
+        final token = _storageService.getToken() ?? '';
+        if (token.contains('.')) {
+          final parts = token.split('.');
+          if (parts.length >= 2) {
+            final normalized = base64Url.normalize(parts[1]);
+            final decodedStr = utf8.decode(base64Url.decode(normalized));
+            final payload = jsonDecode(decodedStr);
+            if (payload is Map && payload['id'] != null) {
+              driverId = payload['id'].toString();
+            }
+          }
+        }
+      }
+
+      if (driverId != null && driverId.isNotEmpty) {
+        _printLog('🚪 [SocketService] Joining driver/user room for ID: $driverId');
+        emit('join', {'userId': driverId, 'driverId': driverId, 'role': 'driver'});
+        emit('join_driver', driverId);
+        emit('driver:join', driverId);
+        emit('join_user', driverId);
+        emit('join', driverId);
+        emit('driver:online', {'userId': driverId, 'driverId': driverId, 'isOnline': true});
+        emit('driver_online', {'userId': driverId, 'driverId': driverId, 'isOnline': true});
+      }
+    } catch (e) {
+      _printLog('⚠️ [SocketService] Error while joining driver rooms: $e');
+    }
+  }
+
+  /// Joins a specific ride's room so booking events targeted to that ride are received.
+  void joinRideRoom(String rideId) {
+    if (rideId.isEmpty) return;
+    _printLog('🚪 [SocketService] Joining ride room for Ride ID: $rideId');
+    emit('join', {'rideId': rideId});
+    emit('joinRide', rideId);
+    emit('join_ride', rideId);
+    emit('join', 'ride_$rideId');
   }
 
   // ──────────────────────────────────────────────
@@ -170,6 +279,7 @@ class SocketService {
     _connectedController.close();
     _disconnectedController.close();
     _bookingCreatedController.close();
+    _anyEventController.close();
   }
 
   // ──────────────────────────────────────────────
@@ -181,6 +291,7 @@ class SocketService {
       // If already connected, preserve existing socket connection
       if (_socket != null && _socket!.connected) {
         _printLog('⚡ [SocketService] Socket already connected (id: ${_socket?.id}) — preserving session.');
+        joinDriverRooms();
         return;
       }
 
@@ -224,16 +335,80 @@ class SocketService {
     if (_socket == null) return;
 
     _socket!.onConnect((_) {
-      _printLog('✅ [SocketService] Connected successfully — id: ${_socket?.id}');
+      final profile = _storageService.getUserProfile();
+      final driverId = profile?.id ??
+          _storageService.getUserData()?['id']?.toString() ??
+          _storageService.getUserData()?['_id']?.toString() ??
+          'N/A';
+      final driverName =
+          profile?.fullName ?? _storageService.getFullName() ?? 'Driver';
+      final driverPhone = profile?.phoneNumber ?? '';
+
+      final sb = StringBuffer();
+      sb.writeln('\n══════════════════════════════════════════════════════════════════════════');
+      sb.writeln('✅ [SOCKET SERVICE: CONNECTED SUCCESSFULLY]');
+      sb.writeln('──────────────────────────────────────────────────────────────────────────');
+      sb.writeln('   • SOCKET ID    : ${_socket?.id}');
+      sb.writeln('   • SERVER URL   : ${ApiEndpoints.socketUrl}');
+      sb.writeln('   • DRIVER ID    : $driverId');
+      sb.writeln('   • DRIVER NAME  : $driverName');
+      if (driverPhone.isNotEmpty) sb.writeln('   • DRIVER PHONE : $driverPhone');
+      sb.writeln('   • CONNECT TIME : ${DateTime.now().toIso8601String()}');
+      sb.writeln('══════════════════════════════════════════════════════════════════════════\n');
+
+      _printLog(sb.toString());
       _connectedController.add(null);
+      // Automatically register driver and join user/driver rooms upon connection
+      joinDriverRooms();
     });
 
-    // Listen for BOOKING_CREATED broadcast from the backend
-    _socket!.on(eventBookingCreated, (data) {
-      _printLog('📩 [SocketService] Event "$eventBookingCreated" received from server: $data');
-      _bookingCreatedController.add(data);
+    // ──────────────────────────────────────────────
+    // 1. Wildcard listener: Log EVERY event from server
+    // ──────────────────────────────────────────────
+    _socket!.onAny((event, data) {
+      final eventName = event.toString();
+      final formattedPayload = _formatData(data);
+
+      final sb = StringBuffer();
+      sb.writeln('\n══════════════════════════════════════════════════════════════════════════');
+      sb.writeln('📩 [SOCKET EVENT RECEIVED FROM SERVER]');
+      sb.writeln('──────────────────────────────────────────────────────────────────────────');
+      sb.writeln('   • EVENT NAME    : "$eventName"');
+      sb.writeln('   • SOCKET ID     : ${_socket?.id ?? "unknown"}');
+      sb.writeln('   • SERVER URL    : ${ApiEndpoints.socketUrl}');
+      sb.writeln('   • TIMESTAMP     : ${DateTime.now().toIso8601String()}');
+      sb.writeln('──────────────────────────────────────────────────────────────────────────');
+      sb.writeln('   • FULL PAYLOAD RECEIVED:');
+      sb.writeln(formattedPayload);
+      sb.writeln('══════════════════════════════════════════════════════════════════════════\n');
+
+      _printLog(sb.toString());
+
+      _anyEventController.add({'event': eventName, 'data': data});
+
+      // Forward to booking controller if event is a driver booking request
+      // (Exclude BOOKING_CONFIRMED which is passenger-facing confirmation)
+      final upper = eventName.toUpperCase();
+      final isDriverBookingRequest = upper == 'BOOKING_CREATED' ||
+          upper == 'BOOKING_REQUEST' ||
+          upper == 'NEW_BOOKING' ||
+          upper == 'RIDE:NEW_AVAILABLE' ||
+          upper == 'SLOT_BOOKED' ||
+          upper == 'RIDE_BOOKED' ||
+          (upper.contains('BOOKING') &&
+              !upper.contains('CONFIRM') &&
+              !upper.contains('CANCEL') &&
+              !upper.contains('USER') &&
+              !upper.contains('PASSENGER'));
+
+      if (isDriverBookingRequest) {
+        _bookingCreatedController.add(data);
+      }
     });
 
+    // ──────────────────────────────────────────────
+    // 2. Explicit booking event listeners (fallback for specific keys)
+    // ──────────────────────────────────────────────
     _socket!.onDisconnect((reason) {
       final msg = reason?.toString() ?? 'unknown';
       _printLog('❌ [SocketService] Disconnected — reason: $msg');
@@ -245,7 +420,7 @@ class SocketService {
     });
 
     _socket!.onReconnect((attempt) {
-      _printLog('🔄 [SocketService] Reconnected after attempt $attempt (id: ${_socket?.id})');
+      _printLog('🔄 [SocketService] Reconnected after attempt $attempt (Socket ID: ${_socket?.id})');
       _connectedController.add(null);
     });
 

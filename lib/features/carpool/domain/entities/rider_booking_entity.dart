@@ -44,6 +44,9 @@ class RiderBookingEntity extends Equatable {
   final String? otpCode;
   final String? passengerNotes;
 
+  /// Alias for totalAmount
+  int get totalPrice => totalAmount;
+
   /// Returns the clean vehicle model name (e.g. "Hgigih", "Maruti")
   String get displayVehicleModel {
     if (vehicleModel != null && vehicleModel!.trim().isNotEmpty) {

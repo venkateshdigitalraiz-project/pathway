@@ -9,10 +9,13 @@ import 'package:pathway/features/carpool/presentation/widgets/carpool_route_sele
 
 import '../../data/datasources/carpool_mock_data_source.dart';
 import '../../data/repositories/carpool_repository_impl.dart';
+import '../../domain/entities/carpool_place_entity.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
 import '../../domain/usecases/carpool_usecases.dart';
+import '../bloc/carpool_location_picker_bloc.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
 import '../widgets/real_google_map_preview.dart';
+import 'carpool_blabla_location_picker_page.dart';
 import 'carpool_ride_published_page.dart';
 
 /// Clean Architecture Route Summary & Booking Confirmation Screen.
@@ -473,6 +476,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                                 pricePerSeat,
                               ),
                             ),
+                            const SizedBox(height: 30),
                           ],
                         ),
                       ),
@@ -653,8 +657,9 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
         date: picked,
         time: currentTime,
       )) {
-        final adjustedTime =
-            CarpoolDateTimeValidator.getNextAvailableTime(picked);
+        final adjustedTime = CarpoolDateTimeValidator.getNextAvailableTime(
+          picked,
+        );
         bloc.add(
           CarpoolOfferTimeChanged(adjustedTime.hour, adjustedTime.minute),
         );
@@ -913,61 +918,83 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
           const SizedBox(height: 12),
 
           // Pick-up (From) Row with Google Maps Blue Pin
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1A56DB).withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.circle,
-                  color: Color(0xFF1A56DB),
-                  size: 11,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'PICK-UP LOCATION',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6B658C),
-                        letterSpacing: 0.3,
-                      ),
+          InkWell(
+            onTap: (context != null)
+                ? () {
+                    CarpoolBlaBlaLocationPickerPage.show(
+                      context,
+                      initialStep: CarpoolLocationStep.pickup,
+                    );
+                  }
+                : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF1A56DB).withOpacity(0.15),
+                      shape: BoxShape.circle,
                     ),
-                    Text(
-                      from,
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF140D43),
-                      ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.circle,
+                      color: Color(0xFF1A56DB),
+                      size: 11,
                     ),
-                    if (fromGeo != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        fromGeo.subtitle,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B658C),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PICK-UP LOCATION',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF6B658C),
+                            letterSpacing: 0.3,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
+                        Text(
+                          from,
+                          style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                        if (fromGeo != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            fromGeo.subtitle,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6B658C),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.edit_location_alt_outlined,
+                      size: 16,
+                      color: Color(0xFF9E9AB8),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
 
           if (stopovers.isNotEmpty) ...[
@@ -1162,61 +1189,91 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
           ),
 
           // Drop-off (To) Row with Google Maps Red Pin
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                margin: const EdgeInsets.only(top: 2),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE53935).withOpacity(0.15),
-                  shape: BoxShape.circle,
-                ),
-                alignment: Alignment.center,
-                child: const Icon(
-                  Icons.location_on_rounded,
-                  color: Color(0xFFE53935),
-                  size: 17,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'DROP-OFF LOCATION',
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF6B658C),
-                        letterSpacing: 0.3,
+          InkWell(
+            onTap: (context != null)
+                ? () {
+                    CarpoolBlaBlaLocationPickerPage.show(
+                      context,
+                      initialStep: CarpoolLocationStep.dropoff,
+                      initialPickup: CarpoolPlaceEntity(
+                        id: 'pickup_${fromGeo?.lat ?? 17.3850}',
+                        name: from,
+                        formattedAddress: fromGeo?.subtitle ?? from,
+                        type: CarpoolPlaceType.locality,
+                        lat: fromGeo?.lat ?? 17.3850,
+                        lng: fromGeo?.lng ?? 78.4867,
                       ),
+                    );
+                  }
+                : null,
+            borderRadius: BorderRadius.circular(10),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    margin: const EdgeInsets.only(top: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE53935).withOpacity(0.15),
+                      shape: BoxShape.circle,
                     ),
-                    Text(
-                      to,
-                      style: const TextStyle(
-                        fontSize: 15.5,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF140D43),
-                      ),
+                    alignment: Alignment.center,
+                    child: const Icon(
+                      Icons.location_on_rounded,
+                      color: Color(0xFFE53935),
+                      size: 17,
                     ),
-                    if (toGeo != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        toGeo.subtitle,
-                        style: const TextStyle(
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                          color: Color(0xFF6B658C),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'DROP-OFF LOCATION',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF6B658C),
+                            letterSpacing: 0.3,
+                          ),
                         ),
-                      ),
-                    ],
-                  ],
-                ),
+                        Text(
+                          to,
+                          style: const TextStyle(
+                            fontSize: 15.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                        if (toGeo != null) ...[
+                          const SizedBox(height: 2),
+                          Text(
+                            toGeo.subtitle,
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF6B658C),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const Padding(
+                    padding: EdgeInsets.all(4),
+                    child: Icon(
+                      Icons.edit_location_alt_outlined,
+                      size: 16,
+                      color: Color(0xFF9E9AB8),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ],
       ),

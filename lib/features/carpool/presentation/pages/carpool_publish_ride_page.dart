@@ -77,7 +77,12 @@ class _PublishRideViewState extends State<_PublishRideView> {
       if (mounted) {
         final bloc = context.read<CarpoolOfferRideBloc>();
         bloc.add(const CarpoolOfferResetStatus());
-        bloc.add(const CarpoolOfferClearRoute());
+        if (bloc.state.from.trim().isNotEmpty &&
+            bloc.state.to.trim().isNotEmpty) {
+          setState(() => _hasSelectedRoute = true);
+        } else {
+          bloc.add(const CarpoolOfferClearRoute());
+        }
       }
     });
   }
@@ -248,8 +253,9 @@ class _PublishRideViewState extends State<_PublishRideView> {
 
         if (!isValidTime) {
           // Adjust to next available future slot for today
-          final nextSlot =
-              CarpoolDateTimeValidator.getNextAvailableTime(picked);
+          final nextSlot = CarpoolDateTimeValidator.getNextAvailableTime(
+            picked,
+          );
           context.read<CarpoolOfferRideBloc>().add(
             CarpoolOfferTimeChanged(nextSlot.hour, nextSlot.minute),
           );
@@ -479,34 +485,6 @@ class _PublishRideViewState extends State<_PublishRideView> {
                             ),
                             child: Column(
                               children: [
-                                // Date Row
-                                _CardInfoRow(
-                                  icon: Icons.calendar_month_rounded,
-                                  title: _hasSelectedDate && isToday
-                                      ? 'Today'
-                                      : 'Date',
-                                  subtitle: _hasSelectedDate
-                                      ? CarpoolFormatters.date(s.departure)
-                                      : 'Select Date',
-                                  isPlaceholder: !_hasSelectedDate,
-                                  onTap: () => _pickDate(context, s),
-                                ),
-
-                                const _CardDivider(),
-
-                                // Time Row
-                                _CardInfoRow(
-                                  icon: Icons.access_time_rounded,
-                                  title: 'Time',
-                                  subtitle: _hasSelectedTime
-                                      ? CarpoolFormatters.time(s.departure)
-                                      : 'Select Time',
-                                  isPlaceholder: !_hasSelectedTime,
-                                  onTap: () => _pickTime(context, s),
-                                ),
-
-                                const _CardDivider(),
-
                                 // Route Row
                                 () {
                                   final bool hasFrom =
@@ -551,41 +529,30 @@ class _PublishRideViewState extends State<_PublishRideView> {
 
                                 const _CardDivider(),
 
-                                // Seats Available Row with Stepper
-                                // Padding(
-                                //   padding: const EdgeInsets.symmetric(
-                                //     vertical: 8,
-                                //     horizontal: 4,
-                                //   ),
-                                //   child: Row(
-                                //     children: [
-                                //       const Icon(
-                                //         Icons.event_seat_rounded,
-                                //         color: AppColors.primaryDark,
-                                //         size: 26,
-                                //       ),
-                                //       const SizedBox(width: 14),
-                                //       const Text(
-                                //         'Seats Available',
-                                //         style: TextStyle(
-                                //           fontWeight: FontWeight.w700,
-                                //           fontSize: 14.5,
-                                //           color: Color(0xFF140D43),
-                                //         ),
-                                //       ),
-                                //       const Spacer(),
-                                //       _SeatsStepper(
-                                //         count: s.seats,
-                                //         onMinus: () => bloc.add(
-                                //           const CarpoolOfferSeatsChanged(-1),
-                                //         ),
-                                //         onPlus: () => bloc.add(
-                                //           const CarpoolOfferSeatsChanged(1),
-                                //         ),
-                                //       ),
-                                //     ],
-                                //   ),
-                                // ),
+                                _CardInfoRow(
+                                  icon: Icons.calendar_month_rounded,
+                                  title: _hasSelectedDate && isToday
+                                      ? 'Today'
+                                      : 'Date',
+                                  subtitle: _hasSelectedDate
+                                      ? CarpoolFormatters.date(s.departure)
+                                      : 'Select Date',
+                                  isPlaceholder: !_hasSelectedDate,
+                                  onTap: () => _pickDate(context, s),
+                                ),
+
+                                const _CardDivider(),
+
+                                // Time Row
+                                _CardInfoRow(
+                                  icon: Icons.access_time_rounded,
+                                  title: 'Time',
+                                  subtitle: _hasSelectedTime
+                                      ? CarpoolFormatters.time(s.departure)
+                                      : 'Select Time',
+                                  isPlaceholder: !_hasSelectedTime,
+                                  onTap: () => _pickTime(context, s),
+                                ),
                               ],
                             ),
                           ),

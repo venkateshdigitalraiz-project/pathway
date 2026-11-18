@@ -1,6 +1,9 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter_android/google_maps_flutter_android.dart';
+import 'package:google_maps_flutter_platform_interface/google_maps_flutter_platform_interface.dart';
 
 import 'core/router/app_router.dart';
 import 'core/storage/storedlocal.dart';
@@ -32,6 +35,19 @@ import 'core/socket/socket.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Configure Google Maps on Android to use Hybrid Composition
+  if (defaultTargetPlatform == TargetPlatform.android) {
+    final GoogleMapsFlutterPlatform mapsImplementation =
+        GoogleMapsFlutterPlatform.instance;
+    if (mapsImplementation is GoogleMapsFlutterAndroid) {
+      mapsImplementation.useAndroidViewSurface = true;
+      try {
+        await mapsImplementation.initializeWithRenderer(AndroidMapRenderer.latest);
+      } catch (_) {}
+    }
+  }
+
   final storedLocal = StoredLocal();
   await storedLocal.init();
   final initialUser = await storedLocal.getUser();

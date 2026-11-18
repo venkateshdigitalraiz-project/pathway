@@ -642,6 +642,11 @@ class _RealGoogleMapPreviewState extends State<RealGoogleMapPreview> {
             final tileScreenY =
                 (h / 2.0) + (ty * 256.0 - centerWorldY) + _panOffset.dy;
 
+            final sub = ['a', 'b', 'c', 'd'][(wrappedTx + ty).abs() % 4];
+            final cartoUrl =
+                'https://$sub.basemaps.cartocdn.com/rastertiles/voyager/$_zoomLevel/$wrappedTx/$ty.png';
+            final googleUrl = _getGoogleTileUrl(wrappedTx, ty, _zoomLevel);
+
             tiles.add(
               Positioned(
                 left: tileScreenX,
@@ -649,11 +654,21 @@ class _RealGoogleMapPreviewState extends State<RealGoogleMapPreview> {
                 width: 256,
                 height: 256,
                 child: Image.network(
-                  _getGoogleTileUrl(wrappedTx, ty, _zoomLevel),
+                  cartoUrl,
                   fit: BoxFit.cover,
                   gaplessPlayback: true,
                   errorBuilder: (context, error, stackTrace) {
-                    return Container(color: const Color(0xFFF2EFE9));
+                    return Image.network(
+                      googleUrl,
+                      headers: const {
+                        'User-Agent':
+                            'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+                      },
+                      fit: BoxFit.cover,
+                      gaplessPlayback: true,
+                      errorBuilder: (_, __, ___) =>
+                          Container(color: const Color(0xFFF2EFE9)),
+                    );
                   },
                 ),
               ),

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:equatable/equatable.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:pathway/core/socket/socket.dart';
 import 'package:pathway/core/storage/auth_local_storage.dart';
@@ -215,6 +216,7 @@ class CarpoolHomeBloc extends Bloc<CarpoolHomeEvent, CarpoolHomeState> {
 
   void _listenToSocketEvents() {
     _bookingCreatedSub = SocketService().onBookingCreated.listen((data) {
+      debugPrint('⚡ [CarpoolHomeBloc] onBookingCreated stream received event payload: $data');
       add(CarpoolHomeBookingCreatedReceived(data));
     });
   }
@@ -231,28 +233,10 @@ class CarpoolHomeBloc extends Bloc<CarpoolHomeEvent, CarpoolHomeState> {
       ]);
       final initialOnline = AuthLocalStorage().isDriverOnline();
 
-      // Initial active rider request so the UI immediately showcases the live cards
-      final defaultBookings = [
-        AvailableRiderEntity(
-          bookingId: '6afbe72cfedd976e36b5f4bd',
-          rideId: '6afbe6a7fedd976e36b5f4bb',
-          passengerId: '6afaeefb709d45ddeb3df715',
-          riderName: 'Priya Sharma',
-          riderPhone: '+91 9876543210',
-          rating: 4.8,
-          totalRides: 24,
-          fromAddress: 'Jeedimetla Village',
-          toAddress: 'Karimnagar',
-          seatsBooked: 1,
-          totalAmount: 543,
-          createdAt: DateTime.now().subtract(const Duration(minutes: 2)),
-          distanceKm: 2.8,
-          etaMin: 6,
-          vehicleModel: 'Hgigih',
-          vehicleNumber: 'GVJVHCY',
-          isNew: false,
-        ),
-      ];
+      // Ensure socket connection is active and driver rooms are joined
+      SocketService().ensureConnected().then((_) {
+        SocketService().joinDriverRooms();
+      });
 
       emit(
         state.copyWith(
@@ -260,7 +244,7 @@ class CarpoolHomeBloc extends Bloc<CarpoolHomeEvent, CarpoolHomeState> {
           user: results[0] as CarpoolUserEntity,
           routes: results[1] as List<CarpoolPopularRouteEntity>,
           isOnline: initialOnline,
-          availableBookings: defaultBookings,
+          availableBookings: const [],
         ),
       );
     } catch (e) {
@@ -276,12 +260,13 @@ class CarpoolHomeBloc extends Bloc<CarpoolHomeEvent, CarpoolHomeState> {
     await AuthLocalStorage().setDriverOnline(event.isOnline);
 
     try {
+      final driverId = AuthLocalStorage().getUserProfile()?.id ?? '';
       if (event.isOnline) {
-        SocketService().emit('driver:online', {'isOnline': true});
-        SocketService().emit('driver_online', {'isOnline': true});
+        SocketService().emit('driver:online', {'driverId': driverId, 'isOnline': true});
+        SocketService().emit('driver_online', {'driverId': driverId, 'isOnline': true});
       } else {
-        SocketService().emit('driver:offline', {'isOnline': false});
-        SocketService().emit('driver_offline', {'isOnline': false});
+        SocketService().emit('driver:offline', {'driverId': driverId, 'isOnline': false});
+        SocketService().emit('driver_offline', {'driverId': driverId, 'isOnline': false});
       }
     } catch (_) {}
   }
@@ -290,14 +275,77 @@ class CarpoolHomeBloc extends Bloc<CarpoolHomeEvent, CarpoolHomeState> {
     CarpoolHomeBookingCreatedReceived event,
     Emitter<CarpoolHomeState> emit,
   ) {
+    debugPrint('\n══════════════════════════════════════════════════════════════════════════');
+    debugPrint('🚗 [CARPOOL HOME BLOC: NEW BOOKING EVENT RECEIVED VIA SOCKET]');
+    debugPrint('──────────────────────────────────────────────────────────────────────────');
+    debugPrint('   • RAW PAYLOAD: ${event.bookingData}');
+    debugPrint('══════════════════════════════════════════════════════════════════════════\n');
+
     try {
+      final currentUserId = AuthLocalStorage().getUserProfile()?.id ??
+          AuthLocalStorage().getUserData()?['id']?.toString() ??
+          AuthLocalStorage().getUserData()?['_id']?.toString() ??
+          '';
+
       final newRider = AvailableRiderEntity.fromJson(event.bookingData);
+
+      // 1. If the logged in user is the PASSENGER who booked the seat,
+      // do not display this event as a driver request on the Publisher Carpool Home page!
+      if (currentUserId.isNotEmpty && newRider.passengerId == currentUserId) {
+        debugPrint('ℹ️ [CarpoolHomeBloc] Event ignored on Publisher view: logged-in user ($currentUserId) is the passenger.');
+        return;
+      }
+
+      // 2. If the payload contains publisherId and it does not match current driver, ignore it
+      String? publisherId;
+      final raw = event.bookingData;
+      if (raw is Map) {
+        if (raw['ride'] is Map) {
+          publisherId = raw['ride']['publisherId']?.toString();
+        }
+        publisherId ??= raw['publisherId']?.toString();
+      }
+      if (currentUserId.isNotEmpty &&
+          publisherId != null &&
+          publisherId.isNotEmpty &&
+          publisherId != currentUserId) {
+        debugPrint('ℹ️ [CarpoolHomeBloc] Event ignored: ride publisher is $publisherId, but active driver is $currentUserId.');
+        return;
+      }
+
+      final sb = StringBuffer();
+      sb.writeln('\n══════════════════════════════════════════════════════════════════════════');
+      sb.writeln('🎉 [CARPOOL HOME BLOC: PARSED RIDER BOOKING CARD DETAILS]');
+      sb.writeln('──────────────────────────────────────────────────────────────────────────');
+      sb.writeln('   • BOOKING ID    : ${newRider.bookingId}');
+      sb.writeln('   • RIDE ID       : ${newRider.rideId}');
+      sb.writeln('   • PASSENGER ID  : ${newRider.passengerId}');
+      sb.writeln('   • RIDER NAME    : ${newRider.riderName}');
+      sb.writeln('   • RIDER PHONE   : ${newRider.riderPhone}');
+      sb.writeln('   • RATING        : ⭐ ${newRider.rating} (${newRider.totalRides} trips)');
+      sb.writeln('   • FROM (PICKUP) : ${newRider.fromAddress}');
+      sb.writeln('   • TO (DROPOFF)  : ${newRider.toAddress}');
+      sb.writeln('   • SEATS BOOKED  : ${newRider.seatsBooked} seat(s)');
+      sb.writeln('   • TOTAL AMOUNT  : ₹${newRider.totalAmount}');
+      sb.writeln('   • VEHICLE       : ${newRider.vehicleModel ?? "Car"} • ${newRider.vehicleNumber ?? "Verified"}');
+      sb.writeln('   • DISTANCE / ETA: ${newRider.distanceKm} km • ~${newRider.etaMin} mins away');
+      sb.writeln('   • BOOKING TIME  : ${newRider.createdAt.toIso8601String()}');
+      sb.writeln('══════════════════════════════════════════════════════════════════════════\n');
+      debugPrint(sb.toString());
+
       final updated = [
         newRider,
         ...state.availableBookings.where((b) => b.bookingId != newRider.bookingId),
       ];
-      emit(state.copyWith(availableBookings: updated));
-    } catch (_) {}
+      emit(state.copyWith(
+        availableBookings: updated,
+        isOnline: true,
+      ));
+      debugPrint('✅ [CarpoolHomeBloc] Live booking card added to UI! Total active cards: ${updated.length}');
+    } catch (e, stack) {
+      debugPrint('❌ [CarpoolHomeBloc] ERROR PARSING BOOKING EVENT: $e');
+      debugPrint('   STACKTRACE:\n$stack');
+    }
   }
 
   void _onDismissBooking(

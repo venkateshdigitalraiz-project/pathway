@@ -51,11 +51,20 @@ class AvailableRiderEntity extends Equatable {
       data = {};
     }
 
+    // Preserve root `ride` map if present before unwrapping `booking`
+    Map<String, dynamic>? rootRide;
+    if (data['ride'] is Map) {
+      rootRide = (data['ride'] as Map).map((k, v) => MapEntry(k.toString(), v));
+    }
+
     // Drill down if payload is wrapped in `booking` or `data`
     if (data.containsKey('booking') && data['booking'] is Map) {
       data = (data['booking'] as Map).map((k, v) => MapEntry(k.toString(), v));
     } else if (data.containsKey('data') && data['data'] is Map) {
       final inner = data['data'] as Map;
+      if (inner.containsKey('ride') && inner['ride'] is Map) {
+        rootRide ??= (inner['ride'] as Map).map((k, v) => MapEntry(k.toString(), v));
+      }
       if (inner.containsKey('booking') && inner['booking'] is Map) {
         data = (inner['booking'] as Map).map((k, v) => MapEntry(k.toString(), v));
       } else {
@@ -63,53 +72,91 @@ class AvailableRiderEntity extends Equatable {
       }
     }
 
-    final id = (data['id'] ??
-            data['bookingId'] ??
+    final id = (data['bookingId'] ??
+            data['id'] ??
             data['_id'] ??
+            data['bookingCode'] ??
             'BK-${DateTime.now().millisecondsSinceEpoch}')
         .toString();
 
     final rideId = (data['rideId'] ??
-            data['ride']?['id'] ??
-            data['ride']?['_id'] ??
+            (data['ride'] is Map
+                ? data['ride']['id'] ?? data['ride']['_id']
+                : null) ??
+            (data['ride'] is String ? data['ride'] : null) ??
             'RD-${DateTime.now().millisecondsSinceEpoch}')
         .toString();
 
     final passengerId = (data['passengerId'] ??
             data['userId'] ??
-            data['passenger']?['id'] ??
+            (data['passenger'] is Map
+                ? data['passenger']['id'] ?? data['passenger']['_id']
+                : null) ??
+            (data['passenger'] is String ? data['passenger'] : null) ??
+            (data['user'] is Map
+                ? data['user']['id'] ?? data['user']['_id']
+                : null) ??
+            (data['user'] is String ? data['user'] : null) ??
             'PS-${DateTime.now().millisecondsSinceEpoch}')
         .toString();
 
-    final riderName = (data['passenger']?['name'] ??
-            data['user']?['fullName'] ??
-            data['user']?['name'] ??
-            data['passengerName'] ??
-            data['riderName'] ??
-            data['name'] ??
-            'Priya Sharma')
-        .toString();
+    String riderName = 'Rider';
+    if (data['passenger'] is Map) {
+      riderName = data['passenger']['name']?.toString() ??
+          data['passenger']['fullName']?.toString() ??
+          riderName;
+    } else if (data['user'] is Map) {
+      riderName = data['user']['fullName']?.toString() ??
+          data['user']['name']?.toString() ??
+          riderName;
+    } else if (data['riderName'] != null &&
+        data['riderName'].toString().isNotEmpty) {
+      riderName = data['riderName'].toString();
+    } else if (data['passengerName'] != null &&
+        data['passengerName'].toString().isNotEmpty) {
+      riderName = data['passengerName'].toString();
+    } else if (data['name'] != null &&
+        data['name'] is String &&
+        data['name'].toString().isNotEmpty) {
+      riderName = data['name'].toString();
+    } else if (data['bookingCode'] != null) {
+      riderName = 'Rider (${data['bookingCode']})';
+    }
 
-    final riderPhone = (data['passenger']?['phone'] ??
-            data['user']?['phoneNumber'] ??
-            data['phone'] ??
-            '+91 9876543210')
-        .toString();
+    String riderPhone = '+91 9876543210';
+    if (data['passenger'] is Map) {
+      riderPhone = data['passenger']['phone']?.toString() ?? riderPhone;
+    } else if (data['user'] is Map) {
+      riderPhone = data['user']['phoneNumber']?.toString() ??
+          data['user']['phone']?.toString() ??
+          riderPhone;
+    } else if (data['phone'] != null && data['phone'].toString().isNotEmpty) {
+      riderPhone = data['phone'].toString();
+    } else if (data['riderPhone'] != null &&
+        data['riderPhone'].toString().isNotEmpty) {
+      riderPhone = data['riderPhone'].toString();
+    }
 
     final rating = (data['rating'] != null)
         ? (double.tryParse(data['rating'].toString()) ?? 4.8)
-        : (data['passenger']?['rating'] != null
+        : (data['passenger'] is Map && data['passenger']['rating'] != null
             ? (double.tryParse(data['passenger']['rating'].toString()) ?? 4.8)
             : 4.8);
 
     final totalRides = (data['totalRides'] != null)
         ? (int.tryParse(data['totalRides'].toString()) ?? 24)
-        : (data['passenger']?['rides'] != null
+        : (data['passenger'] is Map && data['passenger']['rides'] != null
             ? (int.tryParse(data['passenger']['rides'].toString()) ?? 24)
             : 24);
 
-    String fromAddress = 'LB Nagar, Hyderabad';
-    if (data['from'] is Map) {
+    String fromAddress = 'Pickup Point';
+    if (data['pickupPoint'] != null &&
+        data['pickupPoint'].toString().isNotEmpty) {
+      fromAddress = data['pickupPoint'].toString();
+    } else if (data['pickupLocation'] != null &&
+        data['pickupLocation'].toString().isNotEmpty) {
+      fromAddress = data['pickupLocation'].toString();
+    } else if (data['from'] is Map) {
       fromAddress = data['from']['address']?.toString() ??
           data['from']['city']?.toString() ??
           data['from']['locality']?.toString() ??
@@ -117,11 +164,24 @@ class AvailableRiderEntity extends Equatable {
     } else if (data['from'] != null && data['from'].toString().isNotEmpty) {
       fromAddress = data['from'].toString();
     } else if (data['origin'] is Map) {
-      fromAddress = data['origin']['address']?.toString() ?? fromAddress;
+      fromAddress = data['origin']['address']?.toString() ??
+          data['origin']['city']?.toString() ??
+          fromAddress;
+    } else if (data['origin'] != null && data['origin'].toString().isNotEmpty) {
+      fromAddress = data['origin'].toString();
+    } else if (data['fromAddress'] != null &&
+        data['fromAddress'].toString().isNotEmpty) {
+      fromAddress = data['fromAddress'].toString();
     }
 
-    String toAddress = 'Miyapur, Hyderabad';
-    if (data['to'] is Map) {
+    String toAddress = 'Drop-off Point';
+    if (data['dropoffPoint'] != null &&
+        data['dropoffPoint'].toString().isNotEmpty) {
+      toAddress = data['dropoffPoint'].toString();
+    } else if (data['dropoffLocation'] != null &&
+        data['dropoffLocation'].toString().isNotEmpty) {
+      toAddress = data['dropoffLocation'].toString();
+    } else if (data['to'] is Map) {
       toAddress = data['to']['address']?.toString() ??
           data['to']['city']?.toString() ??
           data['to']['locality']?.toString() ??
@@ -129,18 +189,39 @@ class AvailableRiderEntity extends Equatable {
     } else if (data['to'] != null && data['to'].toString().isNotEmpty) {
       toAddress = data['to'].toString();
     } else if (data['destination'] is Map) {
-      toAddress = data['destination']['address']?.toString() ?? toAddress;
+      toAddress = data['destination']['address']?.toString() ??
+          data['destination']['city']?.toString() ??
+          toAddress;
+    } else if (data['destination'] != null &&
+        data['destination'].toString().isNotEmpty) {
+      toAddress = data['destination'].toString();
+    } else if (data['toAddress'] != null &&
+        data['toAddress'].toString().isNotEmpty) {
+      toAddress = data['toAddress'].toString();
     }
 
-    final seatsBooked =
-        int.tryParse(data['seatsBooked']?.toString() ?? '1') ?? 1;
+    final seatsBooked = int.tryParse(
+          data['seatsBooked']?.toString() ??
+              data['seats']?.toString() ??
+              data['bookedSeats']?.toString() ??
+              '1',
+        ) ??
+        1;
 
-    final totalAmount =
-        int.tryParse(data['totalAmount']?.toString() ?? '543') ?? 543;
+    final totalAmount = int.tryParse(
+          data['totalAmount']?.toString() ??
+              data['amount']?.toString() ??
+              data['fare']?.toString() ??
+              data['price']?.toString() ??
+              '550',
+        ) ??
+        550;
 
-    final createdAt = data['createdAt'] != null
-        ? (DateTime.tryParse(data['createdAt'].toString()) ?? DateTime.now())
-        : DateTime.now();
+    DateTime createdAt = DateTime.now();
+    final rawDate = data['createdAt'] ?? data['timestamp'] ?? data['date'];
+    if (rawDate != null) {
+      createdAt = DateTime.tryParse(rawDate.toString()) ?? DateTime.now();
+    }
 
     final distanceKm = double.tryParse(
             data['distance']?.toString() ??
@@ -153,13 +234,19 @@ class AvailableRiderEntity extends Equatable {
             '6') ??
         6;
 
-    final vehicleModel = data['ride']?['vehicleModel']?.toString() ??
-        data['vehicleModel']?.toString() ??
-        'Hgigih';
+    String? vehicleModel;
+    if (data['ride'] is Map) {
+      vehicleModel = data['ride']['vehicleModel']?.toString();
+    }
+    vehicleModel ??= rootRide?['vehicleModel']?.toString();
+    vehicleModel ??= data['vehicleModel']?.toString() ?? 'Sedan';
 
-    final vehicleNumber = data['ride']?['vehicleNumber']?.toString() ??
-        data['vehicleNumber']?.toString() ??
-        'GVJVHCY';
+    String? vehicleNumber;
+    if (data['ride'] is Map) {
+      vehicleNumber = data['ride']['vehicleNumber']?.toString();
+    }
+    vehicleNumber ??= rootRide?['vehicleNumber']?.toString();
+    vehicleNumber ??= data['vehicleNumber']?.toString() ?? 'Verified Car';
 
     return AvailableRiderEntity(
       bookingId: id,
