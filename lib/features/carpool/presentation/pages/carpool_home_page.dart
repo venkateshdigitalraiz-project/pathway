@@ -119,46 +119,46 @@ class _CarpoolHomeView extends StatelessWidget {
     );
   }
 
-  void _handleAcceptBooking(
-    BuildContext context,
-    AvailableRiderEntity booking,
-  ) {
-    final ride = CarpoolRideEntity(
-      id: booking.rideId,
-      driverName: 'Driver',
-      driverRating: 4.9,
-      driverTrips: 120,
-      vehicle:
-          '${booking.vehicleModel ?? "Sedan"} • ${booking.vehicleNumber ?? "GVJVHCY"}',
-      vehicleModel: booking.vehicleModel ?? 'Hgigih',
-      vehicleNumber: booking.vehicleNumber ?? 'GVJVHCY',
-      from: booking.fromAddress,
-      to: booking.toAddress,
-      departure: DateTime.now(),
-      seats: booking.seatsBooked,
-      pricePerSeat: booking.totalAmount,
-      distanceKm: booking.distanceKm.toInt(),
-      status: CarpoolRideStatus.upcoming,
-      rideType: CarpoolRideType.normal,
-    );
+  // void _handleAcceptBooking(
+  //   BuildContext context,
+  //   AvailableRiderEntity booking,
+  // ) {
+  //   final ride = CarpoolRideEntity(
+  //     id: booking.rideId,
+  //     driverName: 'Driver',
+  //     driverRating: 4.9,
+  //     driverTrips: 120,
+  //     vehicle:
+  //         '${booking.vehicleModel ?? "Sedan"} • ${booking.vehicleNumber ?? "GVJVHCY"}',
+  //     vehicleModel: booking.vehicleModel ?? 'Hgigih',
+  //     vehicleNumber: booking.vehicleNumber ?? 'GVJVHCY',
+  //     from: booking.fromAddress,
+  //     to: booking.toAddress,
+  //     departure: DateTime.now(),
+  //     seats: booking.seatsBooked,
+  //     pricePerSeat: booking.totalAmount,
+  //     distanceKm: booking.distanceKm.toInt(),
+  //     status: CarpoolRideStatus.upcoming,
+  //     rideType: CarpoolRideType.normal,
+  //   );
 
-    final passenger = StartRidePassengerEntity(
-      id: booking.passengerId,
-      name: booking.riderName,
-      phone: booking.riderPhone,
-      rating: booking.rating,
-      totalRides: booking.totalRides,
-      pickupLocation: booking.fromAddress,
-      dropoffLocation: booking.toAddress,
-      distanceToPassengerKm: booking.distanceKm,
-      etaToPassengerMin: booking.etaMin,
-      journeyDistanceKm: 12.5,
-      journeyEtaMin: 25,
-      passengerCount: booking.seatsBooked,
-    );
+  //   final passenger = StartRidePassengerEntity(
+  //     id: booking.passengerId,
+  //     name: booking.riderName,
+  //     phone: booking.riderPhone,
+  //     rating: booking.rating,
+  //     totalRides: booking.totalRides,
+  //     pickupLocation: booking.fromAddress,
+  //     dropoffLocation: booking.toAddress,
+  //     distanceToPassengerKm: booking.distanceKm,
+  //     etaToPassengerMin: booking.etaMin,
+  //     journeyDistanceKm: 12.5,
+  //     journeyEtaMin: 25,
+  //     passengerCount: booking.seatsBooked,
+  //   );
 
-    StartRidePage.show(context, ride: ride, passenger: passenger);
-  }
+  //   StartRidePage.show(context, ride: ride, passenger: passenger);
+  // }
 
   void _showDeclineBookingDialog(
     BuildContext context,
@@ -169,9 +169,7 @@ class _CarpoolHomeView extends StatelessWidget {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(22),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
         title: const Text(
           'Decline Ride Request',
           style: TextStyle(
@@ -186,10 +184,7 @@ class _CarpoolHomeView extends StatelessWidget {
           children: [
             Text(
               'Please provide a reason for declining ${booking.riderName}\'s ride request:',
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF6B658C),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF6B658C)),
             ),
             const SizedBox(height: 14),
             TextField(
@@ -214,8 +209,10 @@ class _CarpoolHomeView extends StatelessWidget {
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(14),
-                  borderSide:
-                      const BorderSide(color: Color(0xFF5D24F7), width: 1.5),
+                  borderSide: const BorderSide(
+                    color: Color(0xFF5D24F7),
+                    width: 1.5,
+                  ),
                 ),
                 contentPadding: const EdgeInsets.all(12),
               ),
@@ -243,13 +240,13 @@ class _CarpoolHomeView extends StatelessWidget {
               final reason = reasonController.text.trim();
               Navigator.pop(dialogCtx);
               context.read<CarpoolHomeBloc>().add(
-                    CarpoolHomeRejectBookingRequested(
-                      bookingId: booking.bookingId,
-                      reason: reason.isNotEmpty
-                          ? reason
-                          : 'Vehicle maintenance issue, unable to accommodate passenger',
-                    ),
-                  );
+                CarpoolHomeRejectBookingRequested(
+                  bookingId: booking.bookingId,
+                  reason: reason.isNotEmpty
+                      ? reason
+                      : 'Vehicle maintenance issue, unable to accommodate passenger',
+                ),
+              );
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFEF4444),
@@ -377,9 +374,11 @@ class _CarpoolHomeView extends StatelessWidget {
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text(acceptedBooking.message.isNotEmpty
-                            ? acceptedBooking.message
-                            : 'Booking accepted successfully!'),
+                        content: Text(
+                          acceptedBooking.message.isNotEmpty
+                              ? acceptedBooking.message
+                              : 'Booking accepted successfully!',
+                        ),
                         backgroundColor: const Color(0xFF10B981),
                         behavior: SnackBarBehavior.floating,
                       ),
@@ -424,10 +423,14 @@ class _CarpoolHomeView extends StatelessWidget {
                       passengerCount: acceptedBooking.seatsBooked,
                     );
 
-                    context
-                        .read<CarpoolHomeBloc>()
-                        .add(const CarpoolHomeClearAcceptedBooking());
-                    StartRidePage.show(context, ride: ride, passenger: passenger);
+                    context.read<CarpoolHomeBloc>().add(
+                      const CarpoolHomeClearAcceptedBooking(),
+                    );
+                    StartRidePage.show(
+                      context,
+                      ride: ride,
+                      passenger: passenger,
+                    );
                   }
                 },
                 builder: (context, state) {
@@ -609,9 +612,9 @@ class _CarpoolHomeView extends StatelessWidget {
                           _OnlineOfflineSlideSwitch(
                             isOnline: state.isOnline,
                             onChanged: (val) {
-                              context
-                                  .read<CarpoolHomeBloc>()
-                                  .add(CarpoolHomeToggleOnlineOffline(val));
+                              context.read<CarpoolHomeBloc>().add(
+                                CarpoolHomeToggleOnlineOffline(val),
+                              );
                             },
                           ),
                         ],
@@ -623,9 +626,9 @@ class _CarpoolHomeView extends StatelessWidget {
                       if (!state.isOnline)
                         _OfflineStateBanner(
                           onGoOnline: () {
-                            context
-                                .read<CarpoolHomeBloc>()
-                                .add(const CarpoolHomeToggleOnlineOffline(true));
+                            context.read<CarpoolHomeBloc>().add(
+                              const CarpoolHomeToggleOnlineOffline(true),
+                            );
                           },
                         )
                       else if (state.availableBookings.isNotEmpty)
@@ -647,8 +650,8 @@ class _CarpoolHomeView extends StatelessWidget {
                               isRejecting: isRejecting,
                               onAccept: () {
                                 context.read<CarpoolHomeBloc>().add(
-                                      CarpoolHomeAcceptBookingRequested(booking),
-                                    );
+                                  CarpoolHomeAcceptBookingRequested(booking),
+                                );
                               },
                               onDismiss: () =>
                                   _showDeclineBookingDialog(context, booking),
@@ -1641,7 +1644,9 @@ class _OnlineOfflineSlideSwitch extends StatelessWidget {
             AnimatedAlign(
               duration: const Duration(milliseconds: 260),
               curve: Curves.easeInOut,
-              alignment: isOnline ? Alignment.centerLeft : Alignment.centerRight,
+              alignment: isOnline
+                  ? Alignment.centerLeft
+                  : Alignment.centerRight,
               child: Padding(
                 padding: EdgeInsets.only(
                   left: isOnline ? 9 : 0,
@@ -1661,7 +1666,9 @@ class _OnlineOfflineSlideSwitch extends StatelessWidget {
                         boxShadow: isOnline
                             ? [
                                 BoxShadow(
-                                  color: const Color(0xFF10B981).withValues(alpha: 0.6),
+                                  color: const Color(
+                                    0xFF10B981,
+                                  ).withValues(alpha: 0.6),
                                   blurRadius: 4,
                                   spreadRadius: 1,
                                 ),
@@ -1690,7 +1697,9 @@ class _OnlineOfflineSlideSwitch extends StatelessWidget {
             AnimatedAlign(
               duration: const Duration(milliseconds: 260),
               curve: Curves.easeInOut,
-              alignment: isOnline ? Alignment.centerRight : Alignment.centerLeft,
+              alignment: isOnline
+                  ? Alignment.centerRight
+                  : Alignment.centerLeft,
               child: Container(
                 width: 27,
                 height: 27,
@@ -2026,8 +2035,9 @@ class _AvailableRiderCard extends StatelessWidget {
                           height: 16,
                           child: CircularProgressIndicator(
                             strokeWidth: 2,
-                            valueColor:
-                                AlwaysStoppedAnimation<Color>(Color(0xFF64748B)),
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Color(0xFF64748B),
+                            ),
                           ),
                         )
                       : const Text(
@@ -2057,7 +2067,9 @@ class _AvailableRiderCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
-                          color: const Color(0xFF5025D1).withValues(alpha: 0.35),
+                          color: const Color(
+                            0xFF5025D1,
+                          ).withValues(alpha: 0.35),
                           blurRadius: 10,
                           offset: const Offset(0, 4),
                         ),
@@ -2070,8 +2082,9 @@ class _AvailableRiderCard extends StatelessWidget {
                             height: 18,
                             child: CircularProgressIndicator(
                               strokeWidth: 2.2,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white),
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                Colors.white,
+                              ),
                             ),
                           )
                         : const Row(

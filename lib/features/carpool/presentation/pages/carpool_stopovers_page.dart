@@ -6,6 +6,7 @@ import '../../../../core/constants/api_endpoints.dart';
 import '../../../../core/utils/carpool_distance_calculator.dart';
 import '../../data/datasources/places_remote_data_source.dart';
 import '../../data/repositories/places_repository_impl.dart';
+import '../../domain/entities/carpool_route_option_entity.dart';
 import '../../domain/entities/place_prediction_entity.dart';
 import '../../domain/usecases/get_place_predictions_usecase.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
@@ -88,36 +89,28 @@ class _StopoversViewState extends State<_StopoversView> {
 
     // Automatically load cities and towns strictly along the current active route path
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadInitialRouteBasedSuggestions(force: true);
+      _loadInitialRouteBasedSuggestions();
     });
   }
 
   void _loadInitialRouteBasedSuggestions({bool force = false}) {
     if (!mounted) return;
-    final state = context.read<CarpoolOfferRideBloc>().state;
+    final bloc = context.read<CarpoolOfferRideBloc>();
+    final state = bloc.state;
     final routeKey = '${state.from}_${state.to}';
 
     if (!force &&
         _lastLoadedRouteKey == routeKey &&
-        state.stopovers.isNotEmpty) {
+        state.availableRoutes.isNotEmpty) {
       return;
     }
     _lastLoadedRouteKey = routeKey;
 
-    final routeCities = CarpoolDistanceCalculator.getRouteBasedSuggestions(
-      start: state.from,
-      destination: state.to,
-      startLat: state.fromLat,
-      startLng: state.fromLng,
-      destLat: state.toLat,
-      destLng: state.toLng,
-    );
-
-    context.read<CarpoolOfferRideBloc>().add(
-      CarpoolOfferRouteSuggestionsLoaded(
-        routeCities.map((g) => g.name).toList(),
-      ),
-    );
+    if (state.availableRoutes.isEmpty &&
+        state.from.trim().isNotEmpty &&
+        state.to.trim().isNotEmpty) {
+      bloc.add(const CarpoolOfferFetchRoutes());
+    }
   }
 
   @override
@@ -365,32 +358,71 @@ class _StopoversViewState extends State<_StopoversView> {
       body: SafeArea(
         child: BlocBuilder<CarpoolOfferRideBloc, CarpoolOfferRideState>(
           builder: (context, state) {
-            final rawActive = state.stopovers
-                .where((s) => state.selectedStopovers.contains(s))
-                .toList();
-            CarpoolDistanceCalculator.orderStopoversInCorridor(
-              start: state.from,
-              destination: state.to,
-              stopovers: rawActive.isNotEmpty
-                  ? rawActive
-                  : state.selectedStopovers.toList(),
-              startLat: state.fromLat,
-              startLng: state.fromLng,
-              destLat: state.toLat,
-              destLng: state.toLng,
-            );
+            // Dynamic recalculation of total distance and duration
+            int totalRouteKm;
+            String totalDuration;
 
-            final totalRouteKm = CarpoolDistanceCalculator.calculateDistanceKm(
-              state.from,
-              state.to,
-              fromLat: state.fromLat,
-              fromLng: state.fromLng,
-              toLat: state.toLat,
-              toLng: state.toLng,
-            );
-            final totalDuration = CarpoolDistanceCalculator.estimateDuration(
-              totalRouteKm,
-            );
+            if (state.selectedStopovers.isEmpty) {
+              if (state.selectedRouteOption != null) {
+                totalRouteKm = state.selectedRouteOption!.distanceKm;
+                totalDuration = state.selectedRouteOption!.durationText;
+              } else {
+                totalRouteKm = CarpoolDistanceCalculator.calculateDistanceKm(
+                  state.from,
+                  state.to,
+                  fromLat: state.fromLat,
+                  fromLng: state.fromLng,
+                  toLat: state.toLat,
+                  toLng: state.toLng,
+                );
+                totalDuration =
+                    CarpoolDistanceCalculator.estimateDuration(totalRouteKm);
+              }
+            } else {
+              // Recalculate along the route passing through selected stopovers
+              final ordered = CarpoolDistanceCalculator.orderStopoversInCorridor(
+                start: state.from,
+                destination: state.to,
+                stopovers: state.selectedStopovers.toList(),
+                startLat: state.fromLat,
+                startLng: state.fromLng,
+                destLat: state.toLat,
+                destLng: state.toLng,
+              );
+
+              double accum = 0.0;
+              String prevPlace = state.from;
+              double? prevLat = state.fromLat != 0.0 ? state.fromLat : null;
+              double? prevLng = state.fromLng != 0.0 ? state.fromLng : null;
+
+              for (final s in ordered) {
+                final cGeo = CarpoolDistanceCalculator.findGeo(s);
+                accum += CarpoolDistanceCalculator.calculateDistanceKm(
+                  prevPlace,
+                  s,
+                  fromLat: prevLat,
+                  fromLng: prevLng,
+                  toLat: cGeo?.lat,
+                  toLng: cGeo?.lng,
+                );
+                prevPlace = s;
+                prevLat = cGeo?.lat;
+                prevLng = cGeo?.lng;
+              }
+
+              accum += CarpoolDistanceCalculator.calculateDistanceKm(
+                prevPlace,
+                state.to,
+                fromLat: prevLat,
+                fromLng: prevLng,
+                toLat: state.toLat != 0.0 ? state.toLat : null,
+                toLng: state.toLng != 0.0 ? state.toLng : null,
+              );
+
+              totalRouteKm = accum.round().clamp(1, 9999);
+              totalDuration =
+                  CarpoolDistanceCalculator.estimateDuration(totalRouteKm);
+            }
 
             return Padding(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -414,7 +446,7 @@ class _StopoversViewState extends State<_StopoversView> {
                           ),
                         ),
                       ),
-                      // Route summary pill
+                      // Route summary pill with live recalculation
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 10,
@@ -462,7 +494,7 @@ class _StopoversViewState extends State<_StopoversView> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 14),
 
                   // 3. Smart Stopover Search Input Field
                   Container(
@@ -547,7 +579,12 @@ class _StopoversViewState extends State<_StopoversView> {
                     ),
                   ),
 
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 12),
+
+                  // 3.1 Active Selected Route Summary Banner (Highway, Distance, Duration, Toll status)
+                  _buildActiveRouteBanner(state),
+
+                  const SizedBox(height: 6),
 
                   // 4. Main Body: Live Search Results OR Route-Based Suggested Cities List
                   Expanded(
@@ -788,202 +825,307 @@ class _StopoversViewState extends State<_StopoversView> {
     );
   }
 
-  /// Builds the Route-Based City Suggestions list along the driving route
+  // ══════════════════════════════════════════════════════════════════════════
+  // ACTIVE SELECTED ROUTE BANNER
+  // ══════════════════════════════════════════════════════════════════════════
+  Widget _buildActiveRouteBanner(CarpoolOfferRideState state) {
+    final route = state.selectedRouteOption;
+    if (route == null) return const SizedBox.shrink();
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            route.hasTolls ? Icons.toll_rounded : Icons.money_off_rounded,
+            size: 15,
+            color: route.hasTolls
+                ? const Color(0xFFB45309)
+                : const Color(0xFF15803D),
+          ),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              'Active Route: ${route.highwayName} • ${route.distanceKm} km • ${route.durationText}',
+              style: const TextStyle(
+                fontSize: 11.8,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF334155),
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            decoration: BoxDecoration(
+              color: route.hasTolls
+                  ? const Color(0xFFFEF3C7)
+                  : const Color(0xFFDCFCE7),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              route.hasTolls ? 'Toll' : 'Toll-Free',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: route.hasTolls
+                    ? const Color(0xFFB45309)
+                    : const Color(0xFF15803D),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ROUTE-BASED CITY SUGGESTIONS (SEPARATED ON-ROUTE & OUTSIDE-ROUTE)
+  // ══════════════════════════════════════════════════════════════════════════
   Widget _buildStopoversList(CarpoolOfferRideState state) {
     const primaryPurple = Color(0xFF4C2BF0);
+
+    // 1. Loading state
+    if (state.isRoutesLoading) {
+      return const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(strokeWidth: 2.5, color: primaryPurple),
+            SizedBox(height: 14),
+            Text(
+              'Finding driving routes & intermediate cities...',
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF6B658C),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 2. Unavailable routes message (e.g., when no toll or toll-free route exists)
+    if (state.routesError != null &&
+        state.routeCities.isEmpty &&
+        state.stopovers.isEmpty) {
+      return Center(
+        child: Container(
+          padding: const EdgeInsets.all(18),
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBEB),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: const Color(0xFFFDE68A)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.alt_route_rounded,
+                color: Color(0xFFB45309),
+                size: 36,
+              ),
+              const SizedBox(height: 10),
+              Text(
+                state.routesError!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF92400E),
+                ),
+              ),
+              const SizedBox(height: 14),
+              ElevatedButton.icon(
+                onPressed: () {
+                  context.read<CarpoolOfferRideBloc>().add(
+                    const CarpoolOfferFetchRoutes(forceRefresh: true),
+                  );
+                },
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Retry'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFFB45309),
+                  foregroundColor: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final routeCityMap = {
+      for (final c in state.routeCities) c.name.toLowerCase(): c,
+    };
+
+    // Separate into ON YOUR ROUTE and OUTSIDE YOUR ROUTE lists
+    final onRouteCityNames = <String>[];
+    final outsideRouteCityNames = <String>[];
+
+    final allNames = <String>[];
+    for (final c in state.routeCities) {
+      if (!allNames.contains(c.name)) allNames.add(c.name);
+    }
+    for (final s in state.stopovers) {
+      if (!allNames.contains(s)) allNames.add(s);
+    }
+
+    for (final name in allNames) {
+      final cityEntity = routeCityMap[name.toLowerCase()];
+      if (cityEntity != null && cityEntity.isOnRoute) {
+        onRouteCityNames.add(name);
+      } else {
+        final adj = _validateStopover(state, name);
+        if (adj.isOnRoute) {
+          onRouteCityNames.add(name);
+        } else {
+          outsideRouteCityNames.add(name);
+        }
+      }
+    }
 
     return ListView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.only(bottom: 90),
       children: [
-        if (state.stopovers.isNotEmpty) ...[
-          // Reorderable list of cities along the route
-          Theme(
-            data: Theme.of(context).copyWith(
-              canvasColor: Colors.transparent,
-              shadowColor: Colors.transparent,
-            ),
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              buildDefaultDragHandles: false,
-              itemCount: state.stopovers.length,
-              onReorder: (oldIndex, newIndex) {
-                context.read<CarpoolOfferRideBloc>().add(
-                  CarpoolOfferStopoversReordered(oldIndex, newIndex),
-                );
-              },
-              itemBuilder: (context, index) {
-                final stopover = state.stopovers[index];
-                final isSelected = state.selectedStopovers.contains(stopover);
-                final adj = _validateStopover(state, stopover);
-
-                return Container(
-                  key: ValueKey('stopover_$stopover'),
-                  margin: const EdgeInsets.only(bottom: 2),
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                        child: Row(
-                          children: [
-                            // 1. Rounded Checkbox
-                            InkWell(
-                              onTap: () {
-                                context.read<CarpoolOfferRideBloc>().add(
-                                  CarpoolOfferStopoverToggled(stopover),
-                                );
-                              },
-                              borderRadius: BorderRadius.circular(6),
-                              child: Container(
-                                width: 24,
-                                height: 24,
-                                decoration: BoxDecoration(
-                                  color: isSelected
-                                      ? primaryPurple
-                                      : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: primaryPurple,
-                                    width: 1.8,
-                                  ),
-                                ),
-                                alignment: Alignment.center,
-                                child: isSelected
-                                    ? const Icon(
-                                        Icons.check_rounded,
-                                        color: Colors.white,
-                                        size: 17,
-                                      )
-                                    : null,
-                              ),
-                            ),
-
-                            const SizedBox(width: 14),
-
-                            // 2. City Name & Route Badge
-                            Expanded(
-                              child: InkWell(
-                                onTap: () {
-                                  context.read<CarpoolOfferRideBloc>().add(
-                                    CarpoolOfferStopoverToggled(stopover),
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(8),
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Container(
-                                          width: 20,
-                                          height: 20,
-                                          alignment: Alignment.center,
-                                          decoration: const BoxDecoration(
-                                            color: Color(0xFFF1EEFC),
-                                            shape: BoxShape.circle,
-                                          ),
-                                          child: Text(
-                                            '${index + 1}',
-                                            style: const TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w800,
-                                              color: primaryPurple,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            stopover,
-                                            style: TextStyle(
-                                              fontSize: 16.5,
-                                              fontWeight: FontWeight.w800,
-                                              color: isSelected
-                                                  ? const Color(0xFF140D43)
-                                                  : const Color(0xFF9E98BE),
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    // Validation Tag
-                                    Padding(
-                                      padding: const EdgeInsets.only(left: 28),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            adj.isOnRoute
-                                                ? Icons.check_circle_rounded
-                                                : Icons.alt_route_rounded,
-                                            size: 12,
-                                            color: adj.isOnRoute
-                                                ? const Color(0xFF15803D)
-                                                : const Color(0xFFE65100),
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            adj.isOnRoute
-                                                ? 'On your route'
-                                                : '+${adj.additionalKm} km detour',
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w700,
-                                              color: adj.isOnRoute
-                                                  ? const Color(0xFF15803D)
-                                                  : const Color(0xFFE65100),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
-
-                            // 3. Remove Button
-                            IconButton(
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: Color(0xFF9E98BE),
-                                size: 19,
-                              ),
-                              padding: EdgeInsets.zero,
-                              constraints: const BoxConstraints(),
-                              onPressed: () {
-                                context.read<CarpoolOfferRideBloc>().add(
-                                  CarpoolOfferStopoverRemoved(stopover),
-                                );
-                              },
-                            ),
-                            const SizedBox(width: 8),
-
-                            // 4. Drag Handle for Reordering
-                            ReorderableDragStartListener(
-                              index: index,
-                              child: const Icon(
-                                Icons.drag_handle_rounded,
-                                color: Color(0xFFC7C2E5),
-                                size: 22,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const Divider(
-                        height: 1,
-                        thickness: 1,
-                        color: Color(0xFFF1EEFC),
-                      ),
-                    ],
+        // ── 1. ON YOUR ROUTE SECTION ──
+        if (onRouteCityNames.isNotEmpty) ...[
+          Padding(
+            padding: const EdgeInsets.only(top: 4, bottom: 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(3.5),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFDCFCE7),
+                    shape: BoxShape.circle,
                   ),
-                );
-              },
+                  child: const Icon(
+                    Icons.check_rounded,
+                    size: 13,
+                    color: Color(0xFF15803D),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'ON YOUR ROUTE (${onRouteCityNames.length})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF15803D),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
             ),
           ),
-        ] else ...[
+          ...List.generate(onRouteCityNames.length, (index) {
+            final cityName = onRouteCityNames[index];
+            final cityEntity = routeCityMap[cityName.toLowerCase()];
+            final isSelected = state.selectedStopovers.contains(cityName);
+            final distText = cityEntity != null
+                ? '${cityEntity.distanceKm} km from start'
+                : 'On route';
+            final hasTolls = cityEntity?.hasTolls ??
+                (state.selectedRouteOption?.hasTolls ?? false);
+
+            return _buildCityItemRow(
+              cityName: cityName,
+              index: index + 1,
+              isSelected: isSelected,
+              distanceText: distText,
+              hasTolls: hasTolls,
+              isOnRoute: true,
+              detourText: null,
+              onTap: () {
+                context.read<CarpoolOfferRideBloc>().add(
+                  CarpoolOfferStopoverToggled(cityName),
+                );
+              },
+              onRemove: () {
+                context.read<CarpoolOfferRideBloc>().add(
+                  CarpoolOfferStopoverRemoved(cityName),
+                );
+              },
+            );
+          }),
+        ],
+
+        // ── 2. OUTSIDE YOUR ROUTE SECTION ──
+        if (outsideRouteCityNames.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.only(top: 8, bottom: 8),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(3.5),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFEE2E2),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.alt_route_rounded,
+                    size: 13,
+                    color: Color(0xFFB91C1C),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  'OUTSIDE YOUR ROUTE (${outsideRouteCityNames.length})',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFB91C1C),
+                    letterSpacing: 0.5,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ...List.generate(outsideRouteCityNames.length, (index) {
+            final cityName = outsideRouteCityNames[index];
+            final isSelected = state.selectedStopovers.contains(cityName);
+            final adj = _validateStopover(state, cityName);
+
+            return _buildCityItemRow(
+              cityName: cityName,
+              index: onRouteCityNames.length + index + 1,
+              isSelected: isSelected,
+              distanceText: null,
+              hasTolls: false,
+              isOnRoute: false,
+              detourText: '+${adj.additionalKm} km detour',
+              onTap: () {
+                context.read<CarpoolOfferRideBloc>().add(
+                  CarpoolOfferStopoverToggled(cityName),
+                );
+              },
+              onRemove: () {
+                context.read<CarpoolOfferRideBloc>().add(
+                  CarpoolOfferStopoverRemoved(cityName),
+                );
+              },
+            );
+          }),
+        ],
+
+        // ── 3. Empty State Fallback ──
+        if (onRouteCityNames.isEmpty && outsideRouteCityNames.isEmpty) ...[
           Container(
             padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
             margin: const EdgeInsets.only(top: 8, bottom: 8),
@@ -1011,9 +1153,9 @@ class _StopoversViewState extends State<_StopoversView> {
           ),
         ],
 
-        // "Add city" link (matching screenshot)
+        // ── 4. "Add city" Button ──
         Padding(
-          padding: const EdgeInsets.only(top: 20),
+          padding: const EdgeInsets.only(top: 18),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
             onTap: () {
@@ -1041,6 +1183,199 @@ class _StopoversViewState extends State<_StopoversView> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildCityItemRow({
+    required String cityName,
+    required int index,
+    required bool isSelected,
+    required String? distanceText,
+    required bool hasTolls,
+    required bool isOnRoute,
+    required String? detourText,
+    required VoidCallback onTap,
+    required VoidCallback onRemove,
+  }) {
+    const primaryPurple = Color(0xFF4C2BF0);
+
+    return Container(
+      key: ValueKey('city_$cityName'),
+      margin: const EdgeInsets.only(bottom: 2),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 11),
+            child: Row(
+              children: [
+                // 1. Custom Checkbox
+                InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    width: 24,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: isSelected ? primaryPurple : Colors.transparent,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(
+                        color: primaryPurple,
+                        width: 1.8,
+                      ),
+                    ),
+                    alignment: Alignment.center,
+                    child: isSelected
+                        ? const Icon(
+                            Icons.check_rounded,
+                            color: Colors.white,
+                            size: 17,
+                          )
+                        : null,
+                  ),
+                ),
+
+                const SizedBox(width: 14),
+
+                // 2. City Name, Distance, Toll Badge, On-Route status
+                Expanded(
+                  child: InkWell(
+                    onTap: onTap,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              width: 20,
+                              height: 20,
+                              alignment: Alignment.center,
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1EEFC),
+                                shape: BoxShape.circle,
+                              ),
+                              child: Text(
+                                '$index',
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  color: primaryPurple,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                cityName,
+                                style: TextStyle(
+                                  fontSize: 16.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: isSelected
+                                      ? const Color(0xFF140D43)
+                                      : const Color(0xFF334155),
+                                ),
+                              ),
+                            ),
+                            if (isOnRoute) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: hasTolls
+                                      ? const Color(0xFFFEF3C7)
+                                      : const Color(0xFFDCFCE7),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  hasTolls ? 'Toll' : 'No tolls',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                    color: hasTolls
+                                        ? const Color(0xFFB45309)
+                                        : const Color(0xFF15803D),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+
+                        // Subtitle: Distance from start & Route Validation tag
+                        Padding(
+                          padding: const EdgeInsets.only(left: 28),
+                          child: Row(
+                            children: [
+                              if (distanceText != null) ...[
+                                Text(
+                                  distanceText,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  '•',
+                                  style: TextStyle(color: Color(0xFFCBD5E1)),
+                                ),
+                                const SizedBox(width: 8),
+                              ],
+                              Icon(
+                                isOnRoute
+                                    ? Icons.check_circle_rounded
+                                    : Icons.alt_route_rounded,
+                                size: 12,
+                                color: isOnRoute
+                                    ? const Color(0xFF15803D)
+                                    : const Color(0xFFB91C1C),
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                isOnRoute
+                                    ? 'On your route'
+                                    : (detourText ?? 'Outside route'),
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: isOnRoute
+                                      ? const Color(0xFF15803D)
+                                      : const Color(0xFFB91C1C),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // 3. Remove Button
+                IconButton(
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: Color(0xFF9E98BE),
+                    size: 19,
+                  ),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: onRemove,
+                ),
+              ],
+            ),
+          ),
+          const Divider(
+            height: 1,
+            thickness: 1,
+            color: Color(0xFFF1EEFC),
+          ),
+        ],
+      ),
     );
   }
 }

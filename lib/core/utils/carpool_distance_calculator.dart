@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:math';
 
 import '../constants/api_endpoints.dart';
+import '../../features/carpool/domain/entities/carpool_route_option_entity.dart';
 
 /// Clean Architecture Utility to accurately calculate distances, durations, and place categories
 /// dynamically between any two locations using origin and destination geographic coordinates (Latitude & Longitude).
@@ -1002,6 +1003,233 @@ class CarpoolDistanceCalculator {
     }
 
     return result.take(5).toList();
+  }
+
+  /// Dynamically generates the sequence of major towns/cities traversed along a route polyline
+  /// E.g. "Hyderabad → Suryapet → Khammam → Rajahmundry → Visakhapatnam"
+  static String buildCorridorTownsPath({
+    required String originName,
+    required String destinationName,
+    required List<({double lat, double lng})> polyline,
+    List<String> stepTownHints = const [],
+    double maxDeviationKm = 26.0,
+  }) {
+    final cleanOrigin = originName.split(',').first.trim();
+    final cleanDest = destinationName.split(',').first.trim();
+    if (polyline.length < 2) {
+      return '$cleanOrigin → $cleanDest';
+    }
+
+    final origKey = _sanitizeKey(cleanOrigin);
+    final destKey = _sanitizeKey(cleanDest);
+
+    final candidates = <({String name, double progress, double dist})>[];
+
+    // 1. Check known cities database along the polyline
+    for (final entry in _knownCityCoordinates.entries) {
+      final key = entry.key;
+      if (key == origKey || key == destKey) continue;
+      if (key.length <= 3) continue;
+      if (origKey.contains(key) || destKey.contains(key)) continue;
+
+      final coords = entry.value;
+      final d = distanceToPolyline(coords.lat, coords.lng, polyline);
+      if (d <= maxDeviationKm) {
+        final prog = _calculateProgressAlongPolyline(coords.lat, coords.lng, polyline);
+        if (prog > 0.08 && prog < 0.92) {
+          final displayName = entry.key[0].toUpperCase() + entry.key.substring(1);
+          candidates.add((name: displayName, progress: prog, dist: d));
+        }
+      }
+    }
+
+    // 2. Also check dynamic geo cache for any searched places along the polyline
+    for (final entry in _dynamicGeoCache.entries) {
+      final key = entry.key;
+      if (key == origKey || key == destKey) continue;
+      if (candidates.any((c) => _sanitizeKey(c.name) == key)) continue;
+
+      final geo = entry.value;
+      final d = distanceToPolyline(geo.lat, geo.lng, polyline);
+      if (d <= maxDeviationKm) {
+        final prog = _calculateProgressAlongPolyline(geo.lat, geo.lng, polyline);
+        if (prog > 0.08 && prog < 0.92) {
+          final displayName = geo.name.split(',').first.trim();
+          candidates.add((name: displayName, progress: prog, dist: d));
+        }
+      }
+    }
+
+    // Sort candidates by progression along the polyline (from origin to destination)
+    candidates.sort((a, b) => a.progress.compareTo(b.progress));
+
+    // Deduplicate candidates that are too close in progress (< 0.14 spacing)
+    final selectedTowns = <String>[];
+    double lastProgress = -999.0;
+    for (final c in candidates) {
+      if ((c.progress - lastProgress).abs() >= 0.14) {
+        selectedTowns.add(c.name);
+        lastProgress = c.progress;
+        if (selectedTowns.length >= 4) break;
+      }
+    }
+
+    if (selectedTowns.isNotEmpty) {
+      return '$cleanOrigin → ${selectedTowns.join(' → ')} → $cleanDest';
+    }
+
+    return '$cleanOrigin → $cleanDest';
+  }
+
+  /// Extracts intermediate cities and towns along an actual driving route polyline.
+  /// Dynamically determines route progression, cumulative distance from start,
+  /// whether each city is strictly on the route, and attaches the route toll status.
+  static List<CarpoolStopoverCityEntity> extractCitiesAlongPolyline({
+    required String originName,
+    required String destinationName,
+    required List<({double lat, double lng})> polyline,
+    required bool hasTolls,
+    required int totalDistanceKm,
+    double maxCorridorDeviationKm = 24.0,
+  }) {
+    if (polyline.length < 2) return const [];
+
+    final cleanOrigin = originName.split(',').first.trim();
+    final cleanDest = destinationName.split(',').first.trim();
+    final origKey = _sanitizeKey(cleanOrigin);
+    final destKey = _sanitizeKey(cleanDest);
+
+    final candidates = <({
+      String name,
+      double progress,
+      double dist,
+      double lat,
+      double lng,
+    })>[];
+
+    // 1. Known geographic nodes along the driving polyline
+    for (final entry in _knownCityCoordinates.entries) {
+      final key = entry.key;
+      if (key == origKey || key == destKey) continue;
+      if (key.length <= 3) continue;
+      if (origKey.contains(key) || destKey.contains(key)) continue;
+
+      final coords = entry.value;
+      final d = distanceToPolyline(coords.lat, coords.lng, polyline);
+      if (d <= maxCorridorDeviationKm) {
+        final prog = _calculateProgressAlongPolyline(coords.lat, coords.lng, polyline);
+        if (prog > 0.05 && prog < 0.95) {
+          final displayName = entry.key[0].toUpperCase() + entry.key.substring(1);
+          candidates.add((
+            name: displayName,
+            progress: prog,
+            dist: d,
+            lat: coords.lat,
+            lng: coords.lng,
+          ));
+        }
+      }
+    }
+
+    // 2. Dynamic geo-cache nodes along the driving polyline
+    for (final entry in _dynamicGeoCache.entries) {
+      final key = entry.key;
+      if (key == origKey || key == destKey) continue;
+      if (candidates.any((c) => _sanitizeKey(c.name) == key)) continue;
+
+      final geo = entry.value;
+      final d = distanceToPolyline(geo.lat, geo.lng, polyline);
+      if (d <= maxCorridorDeviationKm) {
+        final prog = _calculateProgressAlongPolyline(geo.lat, geo.lng, polyline);
+        if (prog > 0.05 && prog < 0.95) {
+          final displayName = geo.name.split(',').first.trim();
+          candidates.add((
+            name: displayName,
+            progress: prog,
+            dist: d,
+            lat: geo.lat,
+            lng: geo.lng,
+          ));
+        }
+      }
+    }
+
+    // Sort candidates by route progress from origin to destination
+    candidates.sort((a, b) => a.progress.compareTo(b.progress));
+
+    // Deduplicate candidates that are too close in progression (< 0.08)
+    final results = <CarpoolStopoverCityEntity>[];
+    double lastProgress = -999.0;
+    for (final c in candidates) {
+      if ((c.progress - lastProgress).abs() >= 0.08) {
+        lastProgress = c.progress;
+        final cityDist = (totalDistanceKm * c.progress).round().clamp(1, totalDistanceKm);
+        final isOnRoute = c.dist <= 18.0;
+        final detourKm = isOnRoute ? 0 : (c.dist * 1.5).round();
+
+        results.add(
+          CarpoolStopoverCityEntity(
+            name: c.name,
+            distanceKm: cityDist,
+            hasTolls: hasTolls,
+            isOnRoute: isOnRoute,
+            detourKm: detourKm,
+            lat: c.lat,
+            lng: c.lng,
+          ),
+        );
+      }
+    }
+
+    return results;
+  }
+
+  static double _calculateProgressAlongPolyline(
+    double lat,
+    double lng,
+    List<({double lat, double lng})> polyline,
+  ) {
+    if (polyline.length < 2) return 0.5;
+    double totalLength = 0.0;
+    for (int i = 0; i < polyline.length - 1; i++) {
+      totalLength += _haversine(
+        polyline[i].lat,
+        polyline[i].lng,
+        polyline[i + 1].lat,
+        polyline[i + 1].lng,
+      );
+    }
+    if (totalLength <= 0) return 0.5;
+
+    double minDistance = double.infinity;
+    double bestAccumulated = 0.0;
+    double accumulated = 0.0;
+
+    for (int i = 0; i < polyline.length - 1; i++) {
+      final p1 = polyline[i];
+      final p2 = polyline[i + 1];
+      final segLen = _haversine(p1.lat, p1.lng, p2.lat, p2.lng);
+
+      final dx = p2.lng - p1.lng;
+      final dy = p2.lat - p1.lat;
+      final lenSq = dx * dx + dy * dy;
+
+      double t = 0.0;
+      if (lenSq > 0) {
+        t = (((lng - p1.lng) * dx + (lat - p1.lat) * dy) / lenSq).clamp(0.0, 1.0);
+      }
+      final projLat = p1.lat + t * dy;
+      final projLng = p1.lng + t * dx;
+      final dist = _haversine(lat, lng, projLat, projLng);
+
+      if (dist < minDistance) {
+        minDistance = dist;
+        bestAccumulated = accumulated + (segLen * t);
+      }
+      accumulated += segLen;
+    }
+
+    return (bestAccumulated / totalLength).clamp(0.0, 1.0);
   }
 
   static RouteAdjustment validateLocationOnRoute({

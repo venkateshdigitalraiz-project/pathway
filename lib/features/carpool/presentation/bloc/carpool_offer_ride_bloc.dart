@@ -5,11 +5,18 @@ import '../../../../core/utils/carpool_distance_calculator.dart';
 import '../../../../core/utils/carpool_formatters.dart';
 import '../../../../core/utils/carpool_status.dart';
 import '../../data/datasources/carpool_mock_data_source.dart';
+import '../../data/datasources/carpool_routes_remote_data_source.dart';
 import '../../data/repositories/carpool_repository_impl.dart';
+import '../../data/repositories/carpool_routes_repository_impl.dart';
 import '../../domain/entities/carpool_entities.dart';
+import '../../domain/entities/carpool_place_entity.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
+import '../../domain/entities/carpool_route_option_entity.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
 import '../../domain/usecases/carpool_usecases.dart';
+import '../../domain/usecases/get_carpool_route_options_usecase.dart';
+
+enum CarpoolTollFilter { all, toll, noToll }
 
 abstract class CarpoolOfferRideEvent extends Equatable {
   const CarpoolOfferRideEvent();
@@ -172,6 +179,43 @@ class CarpoolOfferResetStatus extends CarpoolOfferRideEvent {
   const CarpoolOfferResetStatus();
 }
 
+class CarpoolOfferRoutesInitialized extends CarpoolOfferRideEvent {
+  final List<CarpoolRouteOptionEntity> routes;
+  final CarpoolRouteOptionEntity? selectedRoute;
+
+  const CarpoolOfferRoutesInitialized({
+    required this.routes,
+    this.selectedRoute,
+  });
+
+  @override
+  List<Object?> get props => [routes, selectedRoute];
+}
+
+class CarpoolOfferFetchRoutes extends CarpoolOfferRideEvent {
+  final bool forceRefresh;
+  const CarpoolOfferFetchRoutes({this.forceRefresh = false});
+
+  @override
+  List<Object?> get props => [forceRefresh];
+}
+
+class CarpoolOfferTollFilterChanged extends CarpoolOfferRideEvent {
+  final CarpoolTollFilter filter;
+  const CarpoolOfferTollFilterChanged(this.filter);
+
+  @override
+  List<Object?> get props => [filter];
+}
+
+class CarpoolOfferRouteSelected extends CarpoolOfferRideEvent {
+  final CarpoolRouteOptionEntity route;
+  const CarpoolOfferRouteSelected(this.route);
+
+  @override
+  List<Object?> get props => [route];
+}
+
 class CarpoolOfferRideState extends Equatable {
   const CarpoolOfferRideState({
     required this.from,
@@ -193,6 +237,12 @@ class CarpoolOfferRideState extends Equatable {
     this.isPricingLoading = false,
     this.vehicleModel = '',
     this.vehicleNumber = '',
+    this.availableRoutes = const [],
+    this.selectedRouteOption,
+    this.tollFilter = CarpoolTollFilter.all,
+    this.routeCities = const [],
+    this.isRoutesLoading = false,
+    this.routesError,
   });
 
   factory CarpoolOfferRideState.initial() {
@@ -210,6 +260,12 @@ class CarpoolOfferRideState extends Equatable {
       pricePerSeat: null,
       vehicleModel: '',
       vehicleNumber: '',
+      availableRoutes: const [],
+      selectedRouteOption: null,
+      tollFilter: CarpoolTollFilter.all,
+      routeCities: const [],
+      isRoutesLoading: false,
+      routesError: null,
     );
   }
 
@@ -232,6 +288,12 @@ class CarpoolOfferRideState extends Equatable {
   final bool isPricingLoading;
   final String vehicleModel;
   final String vehicleNumber;
+  final List<CarpoolRouteOptionEntity> availableRoutes;
+  final CarpoolRouteOptionEntity? selectedRouteOption;
+  final CarpoolTollFilter tollFilter;
+  final List<CarpoolStopoverCityEntity> routeCities;
+  final bool isRoutesLoading;
+  final String? routesError;
 
   bool get isValid =>
       from.trim().isNotEmpty &&
@@ -261,6 +323,14 @@ class CarpoolOfferRideState extends Equatable {
     bool? isPricingLoading,
     String? vehicleModel,
     String? vehicleNumber,
+    List<CarpoolRouteOptionEntity>? availableRoutes,
+    CarpoolRouteOptionEntity? selectedRouteOption,
+    bool clearSelectedRoute = false,
+    CarpoolTollFilter? tollFilter,
+    List<CarpoolStopoverCityEntity>? routeCities,
+    bool? isRoutesLoading,
+    String? routesError,
+    bool clearRoutesError = false,
   }) => CarpoolOfferRideState(
     from: from ?? this.from,
     to: to ?? this.to,
@@ -283,6 +353,14 @@ class CarpoolOfferRideState extends Equatable {
     isPricingLoading: isPricingLoading ?? this.isPricingLoading,
     vehicleModel: vehicleModel ?? this.vehicleModel,
     vehicleNumber: vehicleNumber ?? this.vehicleNumber,
+    availableRoutes: availableRoutes ?? this.availableRoutes,
+    selectedRouteOption: clearSelectedRoute
+        ? null
+        : (selectedRouteOption ?? this.selectedRouteOption),
+    tollFilter: tollFilter ?? this.tollFilter,
+    routeCities: routeCities ?? this.routeCities,
+    isRoutesLoading: isRoutesLoading ?? this.isRoutesLoading,
+    routesError: clearRoutesError ? null : (routesError ?? this.routesError),
   );
 
   @override
@@ -306,6 +384,12 @@ class CarpoolOfferRideState extends Equatable {
     isPricingLoading,
     vehicleModel,
     vehicleNumber,
+    availableRoutes,
+    selectedRouteOption,
+    tollFilter,
+    routeCities,
+    isRoutesLoading,
+    routesError,
   ];
 }
 
@@ -314,11 +398,19 @@ class CarpoolOfferRideBloc
   CarpoolOfferRideBloc({
     required CarpoolPublishRideUseCase publishRide,
     CarpoolCalculatePricingUseCase? calculatePricing,
+    GetCarpoolRouteOptionsUseCase? getRouteOptionsUseCase,
   }) : _publishRide = publishRide,
        _calculatePricing =
            calculatePricing ??
            CarpoolCalculatePricingUseCase(
              CarpoolRepositoryImpl(CarpoolMockDataSource()),
+           ),
+       _getRouteOptionsUseCase =
+           getRouteOptionsUseCase ??
+           GetCarpoolRouteOptionsUseCase(
+             CarpoolRoutesRepositoryImpl(
+               remoteDataSource: CarpoolRoutesRemoteDataSourceImpl(),
+             ),
            ),
        super(CarpoolOfferRideState.initial()) {
     on<CarpoolOfferFromChanged>(_onFromChanged);
@@ -337,6 +429,10 @@ class CarpoolOfferRideBloc
           selectedStopovers: const {},
           clearPrice: true,
           clearPricing: true,
+          availableRoutes: const [],
+          clearSelectedRoute: true,
+          routeCities: const [],
+          clearRoutesError: true,
         ),
       ),
     );
@@ -460,10 +556,250 @@ class CarpoolOfferRideBloc
         ),
       );
     });
+    on<CarpoolOfferRoutesInitialized>(_onRoutesInitialized);
+    on<CarpoolOfferFetchRoutes>(_onFetchRoutes);
+    on<CarpoolOfferTollFilterChanged>(_onTollFilterChanged);
+    on<CarpoolOfferRouteSelected>(_onRouteSelected);
   }
 
   final CarpoolPublishRideUseCase _publishRide;
   final CarpoolCalculatePricingUseCase _calculatePricing;
+  final GetCarpoolRouteOptionsUseCase _getRouteOptionsUseCase;
+
+  void _onRoutesInitialized(
+    CarpoolOfferRoutesInitialized event,
+    Emitter<CarpoolOfferRideState> emit,
+  ) {
+    final routes = event.routes;
+    final selected = event.selectedRoute ?? (routes.isNotEmpty ? routes.first : null);
+
+    List<CarpoolStopoverCityEntity> cities = const [];
+    if (selected != null) {
+      cities = _extractRouteCities(selected);
+    }
+
+    final tollFilter = selected != null
+        ? (selected.hasTolls ? CarpoolTollFilter.toll : CarpoolTollFilter.noToll)
+        : CarpoolTollFilter.all;
+
+    emit(
+      state.copyWith(
+        availableRoutes: routes,
+        selectedRouteOption: selected,
+        tollFilter: tollFilter,
+        routeCities: cities,
+        stopovers: cities.map((c) => c.name).toList(),
+        isRoutesLoading: false,
+        clearRoutesError: true,
+      ),
+    );
+  }
+
+  List<CarpoolStopoverCityEntity> _extractRouteCities(CarpoolRouteOptionEntity route) {
+    List<CarpoolStopoverCityEntity> cities = CarpoolDistanceCalculator.extractCitiesAlongPolyline(
+      originName: state.from,
+      destinationName: state.to,
+      polyline: route.waypoints.map((w) => (lat: w.lat, lng: w.lng)).toList(),
+      hasTolls: route.hasTolls,
+      totalDistanceKm: route.distanceKm,
+    );
+
+    // Merge any intermediate towns from the route's corridorText
+    if (route.corridorText.isNotEmpty) {
+      final corridorTowns = route.corridorText
+          .split(RegExp(r'\s*(?:→|->)\s*'))
+          .map((s) => s.trim())
+          .where((s) =>
+              s.isNotEmpty &&
+              s.toLowerCase() != state.from.toLowerCase() &&
+              s.toLowerCase() != state.to.toLowerCase())
+          .toList();
+
+      final existingNamesLower = cities.map((c) => c.name.toLowerCase()).toSet();
+      final additionalCities = <CarpoolStopoverCityEntity>[];
+
+      for (int i = 0; i < corridorTowns.length; i++) {
+        final town = corridorTowns[i];
+        if (!existingNamesLower.contains(town.toLowerCase())) {
+          existingNamesLower.add(town.toLowerCase());
+          final approxDist = route.distanceKm > 0
+              ? ((i + 1) * route.distanceKm / (corridorTowns.length + 1)).round()
+              : 0;
+          final coords = CarpoolDistanceCalculator.resolveCoordinates(town);
+          additionalCities.add(
+            CarpoolStopoverCityEntity(
+              name: town,
+              distanceKm: approxDist,
+              hasTolls: route.hasTolls,
+              isOnRoute: true,
+              detourKm: 0,
+              lat: coords.lat,
+              lng: coords.lng,
+            ),
+          );
+        }
+      }
+      if (additionalCities.isNotEmpty) {
+        cities = [...cities, ...additionalCities];
+      }
+    }
+
+    return cities;
+  }
+
+  Future<void> _onFetchRoutes(
+    CarpoolOfferFetchRoutes event,
+    Emitter<CarpoolOfferRideState> emit,
+  ) async {
+    if (state.from.trim().isEmpty || state.to.trim().isEmpty) return;
+    if (!event.forceRefresh && state.availableRoutes.isNotEmpty) return;
+
+    emit(state.copyWith(isRoutesLoading: true, clearRoutesError: true));
+
+    try {
+      final sCoords = CarpoolDistanceCalculator.resolveCoordinates(
+        state.from,
+        preferredLat: state.fromLat != 0.0 ? state.fromLat : null,
+        preferredLng: state.fromLng != 0.0 ? state.fromLng : null,
+      );
+      final dCoords = CarpoolDistanceCalculator.resolveCoordinates(
+        state.to,
+        preferredLat: state.toLat != 0.0 ? state.toLat : null,
+        preferredLng: state.toLng != 0.0 ? state.toLng : null,
+      );
+
+      final routes = await _getRouteOptionsUseCase(
+        origin: CarpoolPlaceEntity(
+          id: 'origin',
+          name: state.from,
+          formattedAddress: state.from,
+          type: CarpoolPlaceType.city,
+          lat: sCoords.lat,
+          lng: sCoords.lng,
+        ),
+        destination: CarpoolPlaceEntity(
+          id: 'dest',
+          name: state.to,
+          formattedAddress: state.to,
+          type: CarpoolPlaceType.city,
+          lat: dCoords.lat,
+          lng: dCoords.lng,
+        ),
+      );
+
+      if (routes.isEmpty) {
+        emit(
+          state.copyWith(
+            isRoutesLoading: false,
+            availableRoutes: const [],
+            clearSelectedRoute: true,
+            routeCities: const [],
+            routesError: 'No driving route found between ${state.from} and ${state.to}',
+          ),
+        );
+        return;
+      }
+
+      final initialRoute = routes.first;
+      final cities = CarpoolDistanceCalculator.extractCitiesAlongPolyline(
+        originName: state.from,
+        destinationName: state.to,
+        polyline: initialRoute.waypoints.map((w) => (lat: w.lat, lng: w.lng)).toList(),
+        hasTolls: initialRoute.hasTolls,
+        totalDistanceKm: initialRoute.distanceKm,
+      );
+
+      emit(
+        state.copyWith(
+          isRoutesLoading: false,
+          availableRoutes: routes,
+          selectedRouteOption: initialRoute,
+          tollFilter: CarpoolTollFilter.all,
+          routeCities: cities,
+          stopovers: cities.map((c) => c.name).toList(),
+          clearRoutesError: true,
+        ),
+      );
+    } catch (e) {
+      emit(
+        state.copyWith(
+          isRoutesLoading: false,
+          routesError: 'Unable to load routes from Google Maps: $e',
+        ),
+      );
+    }
+  }
+
+  void _onTollFilterChanged(
+    CarpoolOfferTollFilterChanged event,
+    Emitter<CarpoolOfferRideState> emit,
+  ) {
+    final filter = event.filter;
+    List<CarpoolRouteOptionEntity> filteredRoutes = state.availableRoutes;
+
+    if (filter == CarpoolTollFilter.toll) {
+      filteredRoutes = state.availableRoutes.where((r) => r.hasTolls).toList();
+    } else if (filter == CarpoolTollFilter.noToll) {
+      filteredRoutes = state.availableRoutes.where((r) => !r.hasTolls).toList();
+    }
+
+    if (filteredRoutes.isEmpty) {
+      final msg = filter == CarpoolTollFilter.noToll
+          ? 'No toll-free route alternative available from Google Maps for this corridor.'
+          : 'No toll route alternative found from Google Maps for this corridor.';
+      emit(
+        state.copyWith(
+          tollFilter: filter,
+          clearSelectedRoute: true,
+          routeCities: const [],
+          routesError: msg,
+        ),
+      );
+      return;
+    }
+
+    CarpoolRouteOptionEntity chosenRoute = filteredRoutes.first;
+    if (state.selectedRouteOption != null &&
+        filteredRoutes.any((r) => r.id == state.selectedRouteOption!.id)) {
+      chosenRoute = state.selectedRouteOption!;
+    }
+
+    final cities = CarpoolDistanceCalculator.extractCitiesAlongPolyline(
+      originName: state.from,
+      destinationName: state.to,
+      polyline: chosenRoute.waypoints.map((w) => (lat: w.lat, lng: w.lng)).toList(),
+      hasTolls: chosenRoute.hasTolls,
+      totalDistanceKm: chosenRoute.distanceKm,
+    );
+
+    emit(
+      state.copyWith(
+        tollFilter: filter,
+        selectedRouteOption: chosenRoute,
+        routeCities: cities,
+        stopovers: cities.map((c) => c.name).toList(),
+        clearRoutesError: true,
+      ),
+    );
+  }
+
+  void _onRouteSelected(
+    CarpoolOfferRouteSelected event,
+    Emitter<CarpoolOfferRideState> emit,
+  ) {
+    final route = event.route;
+    final cities = _extractRouteCities(route);
+
+    emit(
+      state.copyWith(
+        selectedRouteOption: route,
+        tollFilter: route.hasTolls ? CarpoolTollFilter.toll : CarpoolTollFilter.noToll,
+        routeCities: cities,
+        stopovers: cities.map((c) => c.name).toList(),
+        clearRoutesError: true,
+      ),
+    );
+  }
 
   Future<void> _onCalculatePricing(
     CarpoolOfferCalculatePricing event,

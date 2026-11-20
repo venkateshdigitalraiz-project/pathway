@@ -415,8 +415,6 @@ class CarpoolLocationPickerBloc
       ),
     );
 
-    if (state.step == CarpoolLocationStep.routeReady) return;
-
     try {
       final place = await getPlaceFromCoordsUseCase(event.lat, event.lng);
       if (place != null) {
@@ -454,16 +452,13 @@ class CarpoolLocationPickerBloc
         mapCenterLat: updatedPickup.lat,
         mapCenterLng: updatedPickup.lng,
         zoomLevel: 15.5,
+        step: CarpoolLocationStep.pickup,
         cameraUpdateToken: state.cameraUpdateToken + 1,
       );
 
       emit(next);
-
-      if (state.dropoffPlace != null) {
-        await _fetchDirectionsRoute(next.pickupPlace!, state.dropoffPlace!, emit);
-      }
     } else {
-      // Setting Dropoff
+      // Setting Dropoff - keep in manual dropoff selection mode so user can set exact location
       final updatedDropoff = event.place;
       CarpoolLocationPickerState next = state.copyWith(
         dropoffPlace: updatedDropoff,
@@ -471,14 +466,11 @@ class CarpoolLocationPickerBloc
         mapCenterLat: updatedDropoff.lat,
         mapCenterLng: updatedDropoff.lng,
         zoomLevel: 15.5,
+        step: CarpoolLocationStep.dropoff,
         cameraUpdateToken: state.cameraUpdateToken + 1,
       );
 
       emit(next);
-
-      if (state.pickupPlace != null) {
-        await _fetchDirectionsRoute(state.pickupPlace!, next.dropoffPlace!, emit);
-      }
     }
   }
 
@@ -507,10 +499,6 @@ class CarpoolLocationPickerBloc
     );
 
     emit(next);
-
-    if (next.dropoffPlace != null) {
-      await _fetchDirectionsRoute(next.pickupPlace!, next.dropoffPlace!, emit);
-    }
   }
 
   Future<void> _onSwapLocations(
@@ -531,10 +519,6 @@ class CarpoolLocationPickerBloc
     );
 
     emit(next);
-
-    if (next.pickupPlace != null && next.dropoffPlace != null) {
-      await _fetchDirectionsRoute(next.pickupPlace!, next.dropoffPlace!, emit);
-    }
   }
 
   Future<void> _fetchDirectionsRoute(
@@ -611,6 +595,23 @@ class CarpoolLocationPickerBloc
       final place = await getPlaceFromCoordsUseCase(event.lat, event.lng);
       if (place != null) {
         add(CarpoolLocationPickerPlaceSelected(place, step: state.step));
+      } else {
+        final manual = CarpoolPlaceEntity(
+          id: 'manual_${event.lat}_${event.lng}',
+          name: state.step == CarpoolLocationStep.dropoff
+              ? (state.dropoffQuery.isNotEmpty
+                  ? state.dropoffQuery
+                  : 'Exact Drop-off Point')
+              : (state.pickupQuery.isNotEmpty
+                  ? state.pickupQuery
+                  : 'Exact Pick-up Point'),
+          formattedAddress:
+              'Coordinates: ${event.lat.toStringAsFixed(4)}, ${event.lng.toStringAsFixed(4)}',
+          type: CarpoolPlaceType.locality,
+          lat: event.lat,
+          lng: event.lng,
+        );
+        add(CarpoolLocationPickerPlaceSelected(manual, step: state.step));
       }
     } catch (_) {}
   }
@@ -641,7 +642,7 @@ class CarpoolLocationPickerBloc
       add(
         CarpoolLocationPickerPlaceSelected(
           place,
-          step: CarpoolLocationStep.pickup,
+          step: state.step,
         ),
       );
     }

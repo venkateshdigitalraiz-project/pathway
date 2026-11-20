@@ -31,6 +31,7 @@ class RealGoogleMapPicker extends StatefulWidget {
   final Color centerPinColor;
   final bool showControls;
   final bool showGoogleWatermark;
+  final bool showRouteDurationBadges;
   final void Function(double lat, double lng)? onCameraMove;
   final void Function(double lat, double lng)? onCameraIdle;
   final void Function(double lat, double lng)? onTap;
@@ -51,7 +52,8 @@ class RealGoogleMapPicker extends StatefulWidget {
     this.centerPinLabel = 'Pick-up point',
     this.centerPinColor = const Color(0xFF5D24F7),
     this.showControls = false,
-    this.showGoogleWatermark = true,
+    this.showGoogleWatermark = false,
+    this.showRouteDurationBadges = false,
     this.onCameraMove,
     this.onCameraIdle,
     this.onTap,
@@ -124,13 +126,15 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
           widget.routeWaypoints != oldWidget.routeWaypoints) {
         _fitWaypointsToViewport(widget.routeWaypoints, _viewportSize!);
       } else if (widget.routes.isNotEmpty &&
-          (widget.routes != oldWidget.routes ||
-              widget.selectedRouteIndex != oldWidget.selectedRouteIndex)) {
-        final sel = widget.selectedRouteIndex.clamp(0, widget.routes.length - 1);
-        final pts = widget.routes[sel].waypoints
-            .map((w) => (lat: w.lat, lng: w.lng))
-            .toList();
-        _fitWaypointsToViewport(pts, _viewportSize!);
+          widget.routes != oldWidget.routes &&
+          !_hasAutoFitted) {
+        _hasAutoFitted = true;
+        // Auto-fit to encompass all routes so all paths are clearly visible
+        final allPts = <({double lat, double lng})>[];
+        for (final r in widget.routes) {
+          allPts.addAll(r.waypoints.map((w) => (lat: w.lat, lng: w.lng)));
+        }
+        _fitWaypointsToViewport(allPts, _viewportSize!);
       }
     }
   }
@@ -237,14 +241,27 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
     List<({double lat, double lng})> waypoints,
     Size viewport,
   ) {
-    if (waypoints.isEmpty || viewport.width <= 0 || viewport.height <= 0) return;
+    final allPoints = <({double lat, double lng})>[...waypoints];
+    if (widget.pickupPlace != null) {
+      allPoints.add((lat: widget.pickupPlace!.lat, lng: widget.pickupPlace!.lng));
+    }
+    if (widget.dropoffPlace != null) {
+      allPoints.add((lat: widget.dropoffPlace!.lat, lng: widget.dropoffPlace!.lng));
+    }
+    for (final r in widget.routes) {
+      for (final w in r.waypoints) {
+        allPoints.add((lat: w.lat, lng: w.lng));
+      }
+    }
 
-    double minLat = waypoints.first.lat;
-    double maxLat = waypoints.first.lat;
-    double minLng = waypoints.first.lng;
-    double maxLng = waypoints.first.lng;
+    if (allPoints.isEmpty || viewport.width <= 0 || viewport.height <= 0) return;
 
-    for (final pt in waypoints) {
+    double minLat = allPoints.first.lat;
+    double maxLat = allPoints.first.lat;
+    double minLng = allPoints.first.lng;
+    double maxLng = allPoints.first.lng;
+
+    for (final pt in allPoints) {
       if (pt.lat < minLat) minLat = pt.lat;
       if (pt.lat > maxLat) maxLat = pt.lat;
       if (pt.lng < minLng) minLng = pt.lng;
@@ -254,11 +271,9 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
     final double midLat = (minLat + maxLat) / 2.0;
     final double midLng = (minLng + maxLng) / 2.0;
 
-    final double latSpan = (maxLat - minLat).abs();
-    final double lngSpan = (maxLng - minLng).abs();
-
     int targetZoom = 14;
-    for (int z = 17; z >= 5; z--) {
+    bool found = false;
+    for (int z = 17; z >= 4; z--) {
       final x1 = _worldX(minLng, z);
       final x2 = _worldX(maxLng, z);
       final y1 = _worldY(maxLat, z);
@@ -267,16 +282,24 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
       final w = (x2 - x1).abs();
       final h = (y2 - y1).abs();
 
-      if (w < (viewport.width - 90) && h < (viewport.height - 120)) {
+      // Ensure padding so markers and labels don't get clipped
+      final maxAllowedW = max(viewport.width - 80, viewport.width * 0.72);
+      final maxAllowedH = max(viewport.height - 80, viewport.height * 0.72);
+
+      if (w <= maxAllowedW && h <= maxAllowedH) {
         targetZoom = z;
+        found = true;
         break;
       }
+    }
+    if (!found) {
+      targetZoom = 6;
     }
 
     setState(() {
       _centerLat = midLat;
       _centerLng = midLng;
-      _zoomLevel = targetZoom.clamp(5, 17);
+      _zoomLevel = targetZoom.clamp(4, 18);
       _panOffset = Offset.zero;
     });
   }
@@ -333,38 +356,41 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
                 top: tileScreenY,
                 width: 256,
                 height: 256,
-                child: Image.network(
-                  _getTileUrl(wrappedTx, ty, _zoomLevel),
-                  fit: BoxFit.cover,
-                  gaplessPlayback: true,
-                  errorBuilder: (_, __, ___) => Image.network(
-                    'https://tile.openstreetmap.org/$_zoomLevel/$wrappedTx/$ty.png',
-                    fit: BoxFit.cover,
-                    gaplessPlayback: true,
-                    errorBuilder: (_, __, ___) =>
-                        Container(color: const Color(0xFFF2EFE9)),
-                  ),
+                child: _MultiSourceMapTile(
+                  key: ValueKey('tile_${_mapType}_${wrappedTx}_${ty}_$_zoomLevel'),
+                  x: wrappedTx,
+                  y: ty,
+                  z: _zoomLevel,
+                  mapType: _mapType,
                 ),
               ),
             );
           }
         }
 
-        // Active waypoints
+        // Active waypoints (prioritizing the currently selected route when multi-route is active)
         List<({double lat, double lng})> activeWaypoints = widget.routeWaypoints;
-        if (activeWaypoints.isEmpty && widget.routes.isNotEmpty) {
+        if (widget.routes.isNotEmpty) {
           final selIndex = widget.selectedRouteIndex.clamp(0, widget.routes.length - 1);
           activeWaypoints = widget.routes[selIndex].waypoints
               .map((w) => (lat: w.lat, lng: w.lng))
               .toList();
         }
 
-        // Auto-fit on initial layout if route waypoints are present
-        if (!_hasAutoFitted && activeWaypoints.length >= 2 && w > 0 && h > 0) {
+        // Auto-fit on initial layout to encompass all routes
+        if (!_hasAutoFitted && (activeWaypoints.length >= 2 || widget.routes.isNotEmpty) && w > 0 && h > 0) {
           _hasAutoFitted = true;
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted) {
-              _fitWaypointsToViewport(activeWaypoints, viewport);
+              if (widget.routes.isNotEmpty) {
+                final allPts = <({double lat, double lng})>[];
+                for (final r in widget.routes) {
+                  allPts.addAll(r.waypoints.map((w) => (lat: w.lat, lng: w.lng)));
+                }
+                _fitWaypointsToViewport(allPts, viewport);
+              } else {
+                _fitWaypointsToViewport(activeWaypoints, viewport);
+              }
             }
           });
         }
@@ -402,6 +428,31 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
               widget.onCameraIdle?.call(_centerLat, _centerLng);
             },
             onTapUp: (details) {
+              // Interactive Route Selection on Tap (Google Maps Style)
+              if (widget.routes.length > 1 && widget.onRouteSelected != null) {
+                final tapped = details.localPosition;
+                int? tappedRouteIndex;
+                double minDistance = double.infinity;
+
+                for (int i = 0; i < widget.routes.length; i++) {
+                  final r = widget.routes[i];
+                  for (int p = 0; p < r.waypoints.length - 1; p++) {
+                    final p1 = _project(r.waypoints[p].lat, r.waypoints[p].lng, viewport);
+                    final p2 = _project(r.waypoints[p + 1].lat, r.waypoints[p + 1].lng, viewport);
+                    final dist = _distanceToSegment(tapped, p1, p2);
+                    if (dist < 32.0 && dist < minDistance) {
+                      minDistance = dist;
+                      tappedRouteIndex = i;
+                    }
+                  }
+                }
+
+                if (tappedRouteIndex != null && tappedRouteIndex != widget.selectedRouteIndex) {
+                  widget.onRouteSelected!(tappedRouteIndex);
+                  return;
+                }
+              }
+
               final tapped = _unproject(details.localPosition, viewport);
               widget.onTap?.call(tapped.lat, tapped.lng);
             },
@@ -411,7 +462,7 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
                 // 1. Google Maps Raster Tiles Layer (Streets, Sub-cities, Highway curves)
                 Stack(children: tiles),
 
-                // 2. Highway Driving Route Polylines
+                // 2. Highway Driving Route Polylines (Toll & No-Toll Multi-Route)
                 if (activeWaypoints.isNotEmpty || widget.routes.isNotEmpty)
                   CustomPaint(
                     painter: _PickerRoutePainter(
@@ -422,12 +473,17 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
                     ),
                   ),
 
+                // 2.1 Route Duration & Toll Floating Badges (Interactive Pills - only if explicitly enabled)
+                if (widget.showRouteDurationBadges && widget.routes.length >= 2)
+                  _buildRouteFloatingBadges(viewport),
+
                 // 3. Pick-up Marker (Azure Blue circle pin)
                 if (widget.pickupPlace != null)
                   _buildMarkerWidget(
                     place: widget.pickupPlace!,
                     isPickup: true,
                     viewport: viewport,
+                    waypoints: activeWaypoints,
                   ),
 
                 // 4. Drop-off Marker (Cyan/Red pin)
@@ -436,6 +492,7 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
                     place: widget.dropoffPlace!,
                     isPickup: false,
                     viewport: viewport,
+                    waypoints: activeWaypoints,
                   ),
 
                 // 5. BlaBlaCar Interactive Center Floating Pin (during selection)
@@ -557,127 +614,358 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
     );
   }
 
+  static double _distanceToSegment(Offset p, Offset v, Offset w) {
+    final l2 = (w.dx - v.dx) * (w.dx - v.dx) + (w.dy - v.dy) * (w.dy - v.dy);
+    if (l2 == 0) return (p - v).distance;
+    final t = ((p.dx - v.dx) * (w.dx - v.dx) + (p.dy - v.dy) * (w.dy - v.dy)) / l2;
+    final clampedT = t.clamp(0.0, 1.0);
+    final projection = Offset(v.dx + clampedT * (w.dx - v.dx), v.dy + clampedT * (w.dy - v.dy));
+    return (p - projection).distance;
+  }
+
+  Widget _buildRouteFloatingBadges(Size viewport) {
+    if (widget.routes.length < 2) return const SizedBox.shrink();
+
+    final badgeWidgets = <Widget>[];
+
+    for (int i = 0; i < widget.routes.length; i++) {
+      final r = widget.routes[i];
+      if (r.waypoints.length < 2) continue;
+
+      // Position badge along the route near midpoint
+      final midIdx = (r.waypoints.length * (i == 0 ? 0.46 : 0.54))
+          .round()
+          .clamp(0, r.waypoints.length - 1);
+      final midPoint = r.waypoints[midIdx];
+      final screenOffset = _project(midPoint.lat, midPoint.lng, viewport);
+
+      if (screenOffset.dx < 45 ||
+          screenOffset.dx > viewport.width - 45 ||
+          screenOffset.dy < 45 ||
+          screenOffset.dy > viewport.height - 40) {
+        continue;
+      }
+
+      final isSelected = i == widget.selectedRouteIndex;
+
+      badgeWidgets.add(
+        Positioned(
+          left: screenOffset.dx - 65,
+          top: screenOffset.dy - 34,
+          child: GestureDetector(
+            onTap: () {
+              widget.onRouteSelected?.call(i);
+            },
+            child: Material(
+              color: Colors.transparent,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: isSelected ? const Color(0xFF0066FF) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(
+                    color: isSelected
+                        ? const Color(0xFF004ECC)
+                        : const Color(0xFFCBD5E1),
+                    width: isSelected ? 1.5 : 1.2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: isSelected
+                          ? const Color(0xFF0066FF).withOpacity(0.38)
+                          : Colors.black.withOpacity(0.12),
+                      blurRadius: 8,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isSelected
+                          ? Icons.navigation_rounded
+                          : Icons.directions_car_rounded,
+                      size: 13,
+                      color: isSelected ? Colors.white : const Color(0xFF64748B),
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      r.durationText,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                        color:
+                            isSelected ? Colors.white : const Color(0xFF0F172A),
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      r.hasTolls ? '• Tolls' : '• No tolls',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w600,
+                        color: isSelected
+                            ? Colors.white.withOpacity(0.9)
+                            : (r.hasTolls
+                                ? const Color(0xFFD97706)
+                                : const Color(0xFF16A34A)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Stack(children: badgeWidgets);
+  }
+
   Widget _buildMarkerWidget({
     required CarpoolPlaceEntity place,
     required bool isPickup,
     required Size viewport,
+    required List<({double lat, double lng})> waypoints,
   }) {
     final pos = _project(place.lat, place.lng, viewport);
 
+    // 1. Determine label side: dynamically detects route departure/arrival vector
+    // and places the text label on the OPPOSITE side of the route path so the route is never obscured!
+    bool placeOnLeft = false;
+    bool placeVertical = false;
+    bool placeOnTop = false;
+
     if (isPickup) {
-      // BlaBlaCar Origin: Royal Blue outer circle with white center and place name
-      return Positioned(
-        left: pos.dx - 12,
-        top: pos.dy - 12,
-        child: IgnorePointer(
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Container(
-                width: 24,
-                height: 24,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: const Color(0xFF0066FF),
-                    width: 5.5,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: const Color(0xFF0066FF).withOpacity(0.35),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 6),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.92),
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  place.name,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                    letterSpacing: -0.2,
-                  ),
-                  maxLines: 1,
-                ),
-              ),
-            ],
+      // Find direction the route leaves from pickup
+      Offset? nextPos;
+      for (int i = 1; i < waypoints.length; i++) {
+        final pt = _project(waypoints[i].lat, waypoints[i].lng, viewport);
+        if ((pt - pos).distance > 8.0) {
+          nextPos = pt;
+          break;
+        }
+      }
+
+      if (nextPos != null) {
+        final dx = nextPos.dx - pos.dx;
+        final dy = nextPos.dy - pos.dy;
+
+        if (dx.abs() >= 12.0) {
+          // Route leaves to the right -> place text opposite on the LEFT
+          // Route leaves to the left -> place text opposite on the RIGHT
+          placeOnLeft = dx > 0;
+        } else {
+          // Route leaves mostly vertically -> place text above or below opposite to route
+          placeVertical = true;
+          placeOnTop = dy > 0;
+        }
+      }
+    } else {
+      // Find direction the route arrives into dropoff
+      Offset? prevPos;
+      for (int i = waypoints.length - 2; i >= 0; i--) {
+        final pt = _project(waypoints[i].lat, waypoints[i].lng, viewport);
+        if ((pt - pos).distance > 8.0) {
+          prevPos = pt;
+          break;
+        }
+      }
+
+      if (prevPos != null) {
+        final dx = prevPos.dx - pos.dx;
+        final dy = prevPos.dy - pos.dy;
+
+        if (dx.abs() >= 12.0) {
+          // Route arrives from the right -> place text opposite on the LEFT
+          // Route arrives from the left -> place text opposite on the RIGHT
+          placeOnLeft = dx > 0;
+        } else {
+          placeVertical = true;
+          placeOnTop = dy > 0;
+        }
+      }
+    }
+
+    // Boundary safety: if text would bleed off-screen, adjust position safely
+    if (placeOnLeft && pos.dx < 110) {
+      placeOnLeft = false;
+    } else if (!placeOnLeft && !placeVertical && pos.dx > viewport.width - 110) {
+      placeOnLeft = true;
+    }
+
+    // 2. Build Label Tag Widget
+    final labelTag = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.95),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0), width: 0.8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.12),
+            blurRadius: 5,
+            offset: const Offset(0, 1.5),
           ),
+        ],
+      ),
+      child: Text(
+        place.name,
+        style: const TextStyle(
+          fontSize: 12.0,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF0F172A),
+          letterSpacing: -0.2,
+        ),
+        maxLines: 1,
+      ),
+    );
+
+    // 3. Render Pickup Marker
+    if (isPickup) {
+      final pinWidget = Container(
+        width: 24,
+        height: 24,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: const Color(0xFF0066FF),
+            width: 5.5,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF0066FF).withOpacity(0.35),
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
         ),
       );
-    } else {
-      // BlaBlaCar Destination: Blue pin with white dot and place name
+
+      if (placeVertical) {
+        return Stack(
+          children: [
+            Positioned(
+              left: pos.dx - 12,
+              top: pos.dy - 12,
+              child: IgnorePointer(child: pinWidget),
+            ),
+            Positioned(
+              left: (pos.dx - 50).clamp(8.0, viewport.width - 120),
+              top: placeOnTop ? (pos.dy - 40) : (pos.dy + 18),
+              child: IgnorePointer(child: labelTag),
+            ),
+          ],
+        );
+      }
+
+      if (placeOnLeft) {
+        return Positioned(
+          right: viewport.width - (pos.dx + 12),
+          top: pos.dy - 12,
+          child: IgnorePointer(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                labelTag,
+                const SizedBox(width: 6),
+                pinWidget,
+              ],
+            ),
+          ),
+        );
+      } else {
+        return Positioned(
+          left: pos.dx - 12,
+          top: pos.dy - 12,
+          child: IgnorePointer(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                pinWidget,
+                const SizedBox(width: 6),
+                labelTag,
+              ],
+            ),
+          ),
+        );
+      }
+    }
+
+    // 4. Render Dropoff Marker
+    final pinWidget = Stack(
+      alignment: Alignment.center,
+      children: [
+        const Icon(
+          Icons.location_on,
+          size: 34,
+          color: Color(0xFF0066FF),
+        ),
+        Positioned(
+          top: 8,
+          child: Container(
+            width: 9,
+            height: 9,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (placeVertical) {
+      return Stack(
+        children: [
+          Positioned(
+            left: pos.dx - 17,
+            top: pos.dy - 34,
+            child: IgnorePointer(child: pinWidget),
+          ),
+          Positioned(
+            left: (pos.dx - 50).clamp(8.0, viewport.width - 120),
+            top: placeOnTop ? (pos.dy - 62) : (pos.dy + 6),
+            child: IgnorePointer(child: labelTag),
+          ),
+        ],
+      );
+    }
+
+    if (placeOnLeft) {
       return Positioned(
-        left: pos.dx - 14,
+        right: viewport.width - (pos.dx + 17),
         top: pos.dy - 34,
         child: IgnorePointer(
           child: Row(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              Stack(
-                alignment: Alignment.center,
-                children: [
-                  const Icon(
-                    Icons.location_on,
-                    size: 34,
-                    color: Color(0xFF0066FF),
-                  ),
-                  Positioned(
-                    top: 8,
-                    child: Container(
-                      width: 9,
-                      height: 9,
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 4),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.92),
-                  borderRadius: BorderRadius.circular(6),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.12),
-                      blurRadius: 4,
-                      offset: const Offset(0, 1),
-                    ),
-                  ],
-                ),
-                child: Text(
-                  place.name,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF0F172A),
-                    letterSpacing: -0.2,
-                  ),
-                  maxLines: 1,
-                ),
-              ),
+              labelTag,
+              const SizedBox(width: 5),
+              pinWidget,
+            ],
+          ),
+        ),
+      );
+    } else {
+      return Positioned(
+        left: pos.dx - 17,
+        top: pos.dy - 34,
+        child: IgnorePointer(
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              pinWidget,
+              const SizedBox(width: 5),
+              labelTag,
             ],
           ),
         ),
@@ -821,7 +1109,7 @@ class _PickerRoutePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    // 1. Draw alternative unselected routes first in muted gray
+    // 1. Draw alternative unselected routes first in high-contrast muted slate gray (#94A3B8)
     if (routes.isNotEmpty) {
       for (int i = 0; i < routes.length; i++) {
         if (i == selectedRouteIndex) continue;
@@ -837,6 +1125,18 @@ class _PickerRoutePainter extends CustomPainter {
           path.lineTo(pt.dx, pt.dy);
         }
 
+        // Distinct outer casing for unselected route
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = const Color(0xFFCBD5E1)
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 7.0
+            ..strokeCap = StrokeCap.round
+            ..strokeJoin = StrokeJoin.round,
+        );
+
+        // Core line for unselected route
         canvas.drawPath(
           path,
           Paint()
@@ -850,14 +1150,12 @@ class _PickerRoutePainter extends CustomPainter {
     }
 
     // 2. Draw Selected Primary Route in Vibrant BlaBlaCar Royal Blue (#0066FF)
-    final pts = activeWaypoints.isNotEmpty
-        ? activeWaypoints
-        : (routes.isNotEmpty && selectedRouteIndex < routes.length
-            ? routes[selectedRouteIndex]
-                .waypoints
-                .map((w) => (lat: w.lat, lng: w.lng))
-                .toList()
-            : <({double lat, double lng})>[]);
+    final pts = (routes.isNotEmpty && selectedRouteIndex < routes.length)
+        ? routes[selectedRouteIndex]
+            .waypoints
+            .map((w) => (lat: w.lat, lng: w.lng))
+            .toList()
+        : activeWaypoints;
 
     if (pts.length >= 2) {
       final path = Path();
@@ -869,13 +1167,13 @@ class _PickerRoutePainter extends CustomPainter {
         path.lineTo(pt.dx, pt.dy);
       }
 
-      // Outer Casing
+      // Outer Casing (Deep Cobalt Blue)
       canvas.drawPath(
         path,
         Paint()
           ..color = const Color(0xFF004ECC)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 7.5
+          ..strokeWidth = 8.5
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
@@ -886,7 +1184,7 @@ class _PickerRoutePainter extends CustomPainter {
         Paint()
           ..color = const Color(0xFF0066FF)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 5.5
+          ..strokeWidth = 6.0
           ..strokeCap = StrokeCap.round
           ..strokeJoin = StrokeJoin.round,
       );
@@ -923,25 +1221,40 @@ class _MultiSourceMapTile extends StatefulWidget {
 class _MultiSourceMapTileState extends State<_MultiSourceMapTile> {
   int _currentSourceIndex = 0;
 
+  @override
+  void didUpdateWidget(covariant _MultiSourceMapTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.x != oldWidget.x ||
+        widget.y != oldWidget.y ||
+        widget.z != oldWidget.z ||
+        widget.mapType != oldWidget.mapType) {
+      _currentSourceIndex = 0;
+    }
+  }
+
   List<String> get _sources {
-    final sub = ['a', 'b', 'c', 'd'][(widget.x + widget.y).abs() % 4];
-    final server = (widget.x + widget.y).abs() % 4;
+    final sub = ['a', 'b', 'c'][(widget.x + widget.y).abs() % 3];
 
     if (widget.mapType == 1) {
-      // Satellite Imagery
+      // High-resolution Satellite Imagery (Zero API key required, zero watermarks)
       return [
-        'https://mt$server.google.com/vt/lyrs=y&hl=en&x=${widget.x}&y=${widget.y}&z=${widget.z}',
         'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${widget.z}/${widget.y}/${widget.x}',
       ];
     }
 
+    // 100% Free, High-Performance, Zero-Key Map Tile Sources:
+    // Pure, crystal-clear map tiles with NO "API key required" watermark and NO billing needed.
     return [
-      // 1. CartoDB Voyager: ultra-fast, zero quota limits, authentic Google Maps styling
-      'https://$sub.basemaps.cartocdn.com/rastertiles/voyager/${widget.z}/${widget.x}/${widget.y}.png',
-      // 2. Google Maps official tiles
-      'https://mt$server.google.com/vt/lyrs=m&hl=en&x=${widget.x}&y=${widget.y}&z=${widget.z}',
-      // 3. OpenStreetMap
+      // 1. ArcGIS World Street Map: Official Esri global street map (highways, streets, cities, zero watermarks)
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/${widget.z}/${widget.y}/${widget.x}',
+      // 2. OpenStreetMap France: High-performance, high-contrast road mapping (zero watermarks)
+      'https://$sub.tile.openstreetmap.fr/osmfr/${widget.z}/${widget.x}/${widget.y}.png',
+      // 3. OpenStreetMap Humanitarian: Detailed road cartography (zero watermarks)
+      'https://$sub.tile.openstreetmap.fr/hot/${widget.z}/${widget.x}/${widget.y}.png',
+      // 4. OpenStreetMap Worldwide standard
       'https://tile.openstreetmap.org/${widget.z}/${widget.x}/${widget.y}.png',
+      // 5. ArcGIS World Topo Map: Clean topographic street map
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/${widget.z}/${widget.y}/${widget.x}',
     ];
   }
 
@@ -961,9 +1274,10 @@ class _MultiSourceMapTileState extends State<_MultiSourceMapTile> {
     }
 
     final url = sources[_currentSourceIndex];
-    final headers = url.contains('openstreetmap')
-        ? const {'User-Agent': 'PathwayCarpoolApp/1.0 (info@pathway.com)'}
-        : const {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'};
+    const headers = {
+      'User-Agent': 'PathwayCarpoolApp/1.0 (Android; info@pathway.com)',
+      'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+    };
 
     return Image.network(
       url,

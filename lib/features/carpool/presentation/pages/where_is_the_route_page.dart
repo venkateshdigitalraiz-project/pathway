@@ -42,10 +42,8 @@ class WhereIsTheRoutePage extends StatelessWidget {
   }) {
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => WhereIsTheRoutePage(
-          origin: origin,
-          destination: destination,
-        ),
+        builder: (_) =>
+            WhereIsTheRoutePage(origin: origin, destination: destination),
       ),
     );
   }
@@ -60,9 +58,7 @@ class WhereIsTheRoutePage extends StatelessWidget {
 
     return BlocProvider<WhereIsTheRouteBloc>(
       create: (_) => WhereIsTheRouteBloc(getRouteOptionsUseCase: useCase)
-        ..add(
-          WhereIsTheRouteStarted(origin: origin, destination: destination),
-        ),
+        ..add(WhereIsTheRouteStarted(origin: origin, destination: destination)),
       child: const _WhereIsTheRouteView(),
     );
   }
@@ -122,32 +118,25 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
     );
 
     try {
-      _mapController?.animateCamera(
-        CameraUpdate.newLatLngBounds(bounds, 50.0),
-      );
+      _mapController?.animateCamera(CameraUpdate.newLatLngBounds(bounds, 50.0));
     } catch (_) {
       final centerLat = (minLat + maxLat) / 2;
       final centerLng = (minLng + maxLng) / 2;
       _mapController?.animateCamera(
         CameraUpdate.newCameraPosition(
-          CameraPosition(
-            target: LatLng(centerLat, centerLng),
-            zoom: 11.5,
-          ),
+          CameraPosition(target: LatLng(centerLat, centerLng), zoom: 11.5),
         ),
       );
     }
   }
 
-  void _onNextPressed(
-    BuildContext context,
-    WhereIsTheRouteState state,
-  ) {
+  void _onNextPressed(BuildContext context, WhereIsTheRouteState state) {
     if (state.origin == null || state.destination == null) return;
 
     final origin = state.origin!;
     final destination = state.destination!;
-    final selectedRoute = state.selectedRoute;
+    final selectedRoute = state.selectedRoute ??
+        (state.routes.isNotEmpty ? state.routes.first : null);
 
     final remoteDataSource = CarpoolMockDataSource();
     final repository = CarpoolRepositoryImpl(remoteDataSource);
@@ -156,11 +145,7 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
     );
 
     offerBloc.add(
-      CarpoolOfferFromChanged(
-        origin.name,
-        lat: origin.lat,
-        lng: origin.lng,
-      ),
+      CarpoolOfferFromChanged(origin.name, lat: origin.lat, lng: origin.lng),
     );
     offerBloc.add(
       CarpoolOfferToChanged(
@@ -169,6 +154,16 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
         lng: destination.lng,
       ),
     );
+
+    // Pass the single user-selected radio route details to CarpoolStopoversPage
+    if (selectedRoute != null) {
+      offerBloc.add(
+        CarpoolOfferRoutesInitialized(
+          routes: [selectedRoute],
+          selectedRoute: selectedRoute,
+        ),
+      );
+    }
 
     if (selectedRoute != null) {
       offerBloc.add(
@@ -188,12 +183,25 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
   Widget build(BuildContext context) {
     return BlocConsumer<WhereIsTheRouteBloc, WhereIsTheRouteState>(
       listenWhen: (prev, curr) =>
-          prev.status != curr.status ||
-          prev.selectedIndex != curr.selectedIndex,
+          !_hasFittedCamera &&
+          prev.status != curr.status &&
+          curr.status == WhereIsTheRouteStatus.success,
       listener: (context, state) {
-        if (state.status == WhereIsTheRouteStatus.success &&
-            state.selectedRoute != null) {
-          _fitCameraToBounds(state.selectedRoute!.waypoints);
+        if (!_hasFittedCamera &&
+            state.status == WhereIsTheRouteStatus.success &&
+            state.routes.isNotEmpty) {
+          _hasFittedCamera = true;
+          final allPoints = <RouteCoordinate>[];
+          for (final r in state.routes) {
+            allPoints.addAll(r.waypoints);
+          }
+          if (state.origin != null) {
+            allPoints.add(RouteCoordinate(state.origin!.lat, state.origin!.lng));
+          }
+          if (state.destination != null) {
+            allPoints.add(RouteCoordinate(state.destination!.lat, state.destination!.lng));
+          }
+          _fitCameraToBounds(allPoints);
         }
       },
       builder: (context, state) {
@@ -201,8 +209,9 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
           backgroundColor: Colors.white,
           body: Column(
             children: [
-              // 1. Top Section: Google Map covering available screen area with Overlay Back Button
+              // 1. Top Section: 6/10 (60%) screen height for Map
               Expanded(
+                flex: 6,
                 child: Stack(
                   children: [
                     _buildGoogleMap(context, state),
@@ -245,8 +254,11 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
                 ),
               ),
 
-              // 2. Bottom Sheet: "What is your route?" with Options and Next Button
-              _buildRouteOptionsSheet(context, state),
+              // 2. Bottom Section: 4/10 (40%) screen height for Route Options Sheet (where is your route, tolls, no tolls)
+              Expanded(
+                flex: 4,
+                child: _buildRouteOptionsContent(context, state),
+              ),
             ],
           ),
         );
@@ -257,10 +269,7 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
   // ══════════════════════════════════════════════════════════════════════════
   // LIVE REAL GOOGLE MAP WITH BLUE HIGHWAY POLYLINE
   // ══════════════════════════════════════════════════════════════════════════
-  Widget _buildGoogleMap(
-    BuildContext context,
-    WhereIsTheRouteState state,
-  ) {
+  Widget _buildGoogleMap(BuildContext context, WhereIsTheRouteState state) {
     final origin = state.origin;
     final destination = state.destination;
 
@@ -271,8 +280,8 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
             (origin.lng + destination.lng) / 2,
           )
         : (origin != null
-            ? LatLng(origin.lat, origin.lng)
-            : const LatLng(17.3850, 78.4867));
+              ? LatLng(origin.lat, origin.lng)
+              : const LatLng(17.3850, 78.4867));
 
     double initialZoom = 11.5;
     if (origin != null && destination != null) {
@@ -308,121 +317,124 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
       selectedRouteIndex: state.selectedIndex,
       onRouteSelected: (idx) {
         context.read<WhereIsTheRouteBloc>().add(
-              WhereIsTheRouteOptionSelected(idx),
-            );
+          WhereIsTheRouteOptionSelected(idx),
+        );
       },
       showCenterPin: false,
       showControls: false,
-      showGoogleWatermark: true,
+      showGoogleWatermark: false,
+      showRouteDurationBadges: false,
     );
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // BOTTOM SHEET: "What is your route?" (1:1 Match with Screenshot)
+  // SCROLLABLE ROUTE OPTIONS CONTENT (4/10 Screen Height Sheet)
   // ══════════════════════════════════════════════════════════════════════════
-  Widget _buildRouteOptionsSheet(
+  Widget _buildRouteOptionsContent(
     BuildContext context,
     WhereIsTheRouteState state,
   ) {
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.09),
-            blurRadius: 18,
-            offset: const Offset(0, -4),
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 16,
+            offset: const Offset(0, -3),
           ),
         ],
       ),
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 30),
-      child: SafeArea(
-        top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Drag Handle Indicator
-            Center(
-              child: Container(
-                width: 44,
-                height: 4.5,
-                margin: const EdgeInsets.only(bottom: 20),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE2E8F0),
-                  borderRadius: BorderRadius.circular(3),
-                ),
-              ),
+      child: Stack(
+        children: [
+          // Scrollable route details (Auto-scrolls smoothly; map above remains fixed at 6/10)
+          SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
             ),
-
-            // Large Bold Header: "What is your route?"
-            const Text(
-              'What is your route?',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.w900,
-                color: Color(0xFF0F172A),
-                letterSpacing: -0.5,
-              ),
+            padding: EdgeInsets.fromLTRB(
+              22,
+              12,
+              22,
+              MediaQuery.of(context).padding.bottom + 76, // Room for floating next button
             ),
-
-            const SizedBox(height: 22),
-
-            // Route Options List
-            if (state.status == WhereIsTheRouteStatus.loading)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(vertical: 24),
-                  child: CircularProgressIndicator(
-                    color: Color(0xFF0066FF),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Top Drag Handle Indicator
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4.0,
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(3),
+                    ),
                   ),
                 ),
-              )
-            else
-              ...List.generate(state.routes.length, (index) {
-                final route = state.routes[index];
-                final isSelected = index == state.selectedIndex;
 
-                return InkWell(
-                  onTap: () {
-                    context.read<WhereIsTheRouteBloc>().add(
-                          WhereIsTheRouteOptionSelected(index),
-                        );
-                  },
-                  splashColor: Colors.transparent,
-                  highlightColor: Colors.transparent,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 14),
+                // Live Duration Displayed ABOVE "What is your route?" Header
+                if (state.selectedRoute != null)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Custom Radio Indicator (Matches Screenshot exactly)
-                        _buildRadioIndicator(isSelected),
-
-                        const SizedBox(width: 18),
-
-                        // Route Details (Duration - Tolls / Distance - Highway)
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEFF6FF),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(color: const Color(0xFFBFDBFE), width: 1.2),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
+                              const Icon(
+                                Icons.schedule_rounded,
+                                size: 14,
+                                color: Color(0xFF0066FF),
+                              ),
+                              const SizedBox(width: 5),
                               Text(
-                                route.title,
+                                state.selectedRoute!.durationText,
                                 style: const TextStyle(
-                                  fontSize: 16.5,
+                                  fontSize: 12.5,
                                   fontWeight: FontWeight.w800,
-                                  color: Color(0xFF0F172A),
+                                  color: Color(0xFF0066FF),
                                   letterSpacing: -0.2,
                                 ),
                               ),
-                              const SizedBox(height: 3),
+                              const SizedBox(width: 6),
                               Text(
-                                route.subtitle,
+                                '•  ${state.selectedRoute!.distanceKm} km',
                                 style: const TextStyle(
-                                  fontSize: 14.5,
-                                  fontWeight: FontWeight.w500,
+                                  fontSize: 12.0,
+                                  fontWeight: FontWeight.w600,
                                   color: Color(0xFF64748B),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: state.selectedRoute!.hasTolls
+                                      ? const Color(0xFFFEF3C7)
+                                      : const Color(0xFFDCFCE7),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  state.selectedRoute!.hasTolls ? 'Tolls' : 'No tolls',
+                                  style: TextStyle(
+                                    fontSize: 10.0,
+                                    fontWeight: FontWeight.w700,
+                                    color: state.selectedRoute!.hasTolls
+                                        ? const Color(0xFFB45309)
+                                        : const Color(0xFF15803D),
+                                  ),
                                 ),
                               ),
                             ],
@@ -431,43 +443,118 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
                       ],
                     ),
                   ),
-                );
-              }),
 
-            const SizedBox(height: 16),
-
-            // Bottom Right Next Move Button (→)
-            Align(
-              alignment: Alignment.centerRight,
-              child: InkWell(
-                onTap: () => _onNextPressed(context, state),
-                borderRadius: BorderRadius.circular(30),
-                child: Container(
-                  width: 58,
-                  height: 58,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF0066FF),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF0066FF).withOpacity(0.38),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
-                      ),
-                    ],
+                // Bold Header: "What is your route?"
+                const Text(
+                  'What is your route?',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFF0F172A),
+                    letterSpacing: -0.4,
                   ),
-                  child: const Center(
-                    child: Icon(
-                      Icons.arrow_forward_rounded,
-                      color: Colors.white,
-                      size: 28,
+                ),
+
+                const SizedBox(height: 12),
+
+                // Route Options List or Loading Indicator
+                if (state.status == WhereIsTheRouteStatus.loading)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.symmetric(vertical: 30),
+                      child: CircularProgressIndicator(color: Color(0xFF0066FF)),
                     ),
+                  )
+                else
+                  ...List.generate(state.routes.length, (index) {
+                    final route = state.routes[index];
+                    final isSelected = index == state.selectedIndex;
+
+                    return InkWell(
+                      onTap: () {
+                        context.read<WhereIsTheRouteBloc>().add(
+                          WhereIsTheRouteOptionSelected(index),
+                        );
+                      },
+                      splashColor: Colors.transparent,
+                      highlightColor: Colors.transparent,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Custom Radio Indicator (Matches Screenshot exactly)
+                            _buildRadioIndicator(isSelected),
+
+                            const SizedBox(width: 16),
+
+                            // Route Details (Duration - Tolls / Distance - Highway / Corridor Cities Path)
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    route.title,
+                                    style: const TextStyle(
+                                      fontSize: 15.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF0F172A),
+                                      letterSpacing: -0.2,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    route.subtitle,
+                                    style: const TextStyle(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w500,
+                                      color: Color(0xFF64748B),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+              ],
+            ),
+          ),
+
+          // Pinned Floating Next Button at Bottom Right (Matches Screenshot)
+          Positioned(
+            right: 20,
+            bottom: MediaQuery.of(context).padding.bottom + 14,
+            child: InkWell(
+              onTap: () => _onNextPressed(context, state),
+              borderRadius: BorderRadius.circular(28),
+              child: Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0066FF),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF0066FF).withOpacity(0.38),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: const Center(
+                  child: Icon(
+                    Icons.arrow_forward_rounded,
+                    color: Colors.white,
+                    size: 26,
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -482,10 +569,7 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
         height: 24,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          border: Border.all(
-            color: const Color(0xFF0066FF),
-            width: 2.5,
-          ),
+          border: Border.all(color: const Color(0xFF0066FF), width: 2.5),
         ),
         child: Center(
           child: Container(
@@ -505,10 +589,7 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
       height: 24,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        border: Border.all(
-          color: const Color(0xFF0066FF),
-          width: 2.2,
-        ),
+        border: Border.all(color: const Color(0xFF0066FF), width: 2.2),
       ),
     );
   }

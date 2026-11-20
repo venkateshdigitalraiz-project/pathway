@@ -147,8 +147,12 @@ class CarpoolBlaBlaRouteSearchCard extends StatelessWidget {
                                         color: Color(0xFF94A3B8),
                                       ),
                                       border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
                                       isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(
+                                      contentPadding: const EdgeInsets.symmetric(
                                         vertical: 8,
                                       ),
                                     ),
@@ -217,8 +221,12 @@ class CarpoolBlaBlaRouteSearchCard extends StatelessWidget {
                                         color: Color(0xFF94A3B8),
                                       ),
                                       border: InputBorder.none,
+                                      enabledBorder: InputBorder.none,
+                                      focusedBorder: InputBorder.none,
+                                      errorBorder: InputBorder.none,
+                                      disabledBorder: InputBorder.none,
                                       isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(
+                                      contentPadding: const EdgeInsets.symmetric(
                                         vertical: 8,
                                       ),
                                     ),
@@ -419,12 +427,6 @@ class CarpoolBlaBlaRouteSearchCard extends StatelessWidget {
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: activeFocusNode.hasFocus
-                    ? accentColor
-                    : const Color(0xFFE2E8F0),
-                width: 1.2,
-              ),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
@@ -465,6 +467,10 @@ class CarpoolBlaBlaRouteSearchCard extends StatelessWidget {
                         color: Color(0xFF94A3B8),
                       ),
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
+                      errorBorder: InputBorder.none,
+                      disabledBorder: InputBorder.none,
                       isDense: true,
                       contentPadding: const EdgeInsets.symmetric(vertical: 8),
                     ),

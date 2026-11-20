@@ -8,6 +8,7 @@ class CarpoolRouteOptionModel extends CarpoolRouteOptionEntity {
     required super.hasTolls,
     required super.highwayName,
     required super.waypoints,
+    super.corridorText = '',
   });
 
   factory CarpoolRouteOptionModel.fromJson(Map<String, dynamic> json) {
@@ -29,6 +30,7 @@ class CarpoolRouteOptionModel extends CarpoolRouteOptionEntity {
       hasTolls: json['hasTolls'] as bool? ?? true,
       highwayName: json['highwayName']?.toString() ?? 'Highway',
       waypoints: waypoints,
+      corridorText: json['corridorText']?.toString() ?? '',
     );
   }
 
@@ -40,6 +42,7 @@ class CarpoolRouteOptionModel extends CarpoolRouteOptionEntity {
       'hasTolls': hasTolls,
       'highwayName': highwayName,
       'waypoints': waypoints.map((w) => {'lat': w.lat, 'lng': w.lng}).toList(),
+      'corridorText': corridorText,
     };
   }
 }

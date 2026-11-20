@@ -335,20 +335,12 @@ class _BlaBlaLocationPickerViewState extends State<_BlaBlaLocationPickerView> {
           _dropoffController.text = state.dropoffPlace!.name;
         }
 
-        // Camera animation
-        if (state.hasBothLocations &&
-            state.step == CarpoolLocationStep.routeReady) {
-          _fitRouteBounds(
-            LatLng(state.pickupPlace!.lat, state.pickupPlace!.lng),
-            LatLng(state.dropoffPlace!.lat, state.dropoffPlace!.lng),
-          );
-        } else {
-          _animateMapCamera(
-            state.mapCenterLat,
-            state.mapCenterLng,
-            state.zoomLevel,
-          );
-        }
+        // Camera animation to current target
+        _animateMapCamera(
+          state.mapCenterLat,
+          state.mapCenterLng,
+          state.zoomLevel,
+        );
       },
       builder: (context, state) {
         return Scaffold(
@@ -394,9 +386,8 @@ class _BlaBlaLocationPickerViewState extends State<_BlaBlaLocationPickerView> {
                     // Fullscreen Google Map (Fills entire space)
                     _buildGoogleMapWidget(context, state),
 
-                    // BlaBlaCar-Style Central Pin Overlay (Active during Pick-up and Drop-off selection)
-                    if (state.step != CarpoolLocationStep.routeReady)
-                      _buildCenterFloatingPin(state),
+                    // BlaBlaCar-Style Central Pin Overlay (Always active so user can set exact location)
+                    _buildCenterFloatingPin(state),
 
                     // Top Instruction Hint Pill
                     Positioned(
@@ -447,37 +438,6 @@ class _BlaBlaLocationPickerViewState extends State<_BlaBlaLocationPickerView> {
                       ),
                     ),
 
-                    // Google Logo Watermark
-                    Positioned(
-                      left: 14,
-                      bottom: 145,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.88),
-                          borderRadius: BorderRadius.circular(4),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.06),
-                              blurRadius: 4,
-                            ),
-                          ],
-                        ),
-                        child: const Text(
-                          'Google',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF5F6368),
-                            letterSpacing: -0.3,
-                          ),
-                        ),
-                      ),
-                    ),
-
                     // Floating Recenter to Current Location Button
                     Positioned(
                       right: 16,
@@ -500,43 +460,6 @@ class _BlaBlaLocationPickerViewState extends State<_BlaBlaLocationPickerView> {
                         ),
                       ),
                     ),
-
-                    // Floating Right-Center "Move Next" Icon Button (when both locations selected)
-                    if (state.hasBothLocations)
-                      Positioned(
-                        right: 16,
-                        top: 0,
-                        bottom: 0,
-                        child: Center(
-                          child: InkWell(
-                            onTap: () =>
-                                _navigateToWhereIsTheRoute(context, state),
-                            borderRadius: BorderRadius.circular(30),
-                            child: Container(
-                              width: 56,
-                              height: 56,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0066FF),
-                                shape: BoxShape.circle,
-                                boxShadow: [
-                                  BoxShadow(
-                                    color: const Color(
-                                      0xFF0066FF,
-                                    ).withOpacity(0.42),
-                                    blurRadius: 14,
-                                    offset: const Offset(0, 4),
-                                  ),
-                                ],
-                              ),
-                              child: const Icon(
-                                Icons.arrow_forward_rounded,
-                                color: Colors.white,
-                                size: 28,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
 
                     // Bottom Dynamic Location & Route Navigation Card
                     Positioned(
@@ -822,11 +745,11 @@ class _BlaBlaLocationPickerViewState extends State<_BlaBlaLocationPickerView> {
       centerLat: state.mapCenterLat,
       centerLng: state.mapCenterLng,
       zoom: state.zoomLevel,
-      pickupPlace: state.pickupPlace,
-      dropoffPlace: state.dropoffPlace,
-      routeWaypoints: state.routeWaypoints,
+      pickupPlace: null,
+      dropoffPlace: null,
+      routeWaypoints: const [],
       showCenterPin: false,
-      showControls: false,
+      showControls: true,
       showGoogleWatermark: false,
       onCameraMove: (lat, lng) {
         _currentCenter = LatLng(lat, lng);

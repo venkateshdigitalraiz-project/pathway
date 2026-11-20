@@ -17,6 +17,7 @@ class CarpoolRouteOptionEntity extends Equatable {
   final bool hasTolls;
   final String highwayName;
   final List<RouteCoordinate> waypoints;
+  final String corridorText;
 
   const CarpoolRouteOptionEntity({
     required this.id,
@@ -25,18 +26,55 @@ class CarpoolRouteOptionEntity extends Equatable {
     required this.hasTolls,
     required this.highwayName,
     required this.waypoints,
+    this.corridorText = '',
   });
 
-  String get title => '$durationText - ${hasTolls ? 'Tolls' : 'No tolls'}';
-  String get subtitle => '$distanceKm km - $highwayName';
+  String get title => '$durationText • ${hasTolls ? 'Tolls' : 'No tolls'}';
+  String get subtitle => '$distanceKm km • $highwayName';
 
   @override
   List<Object?> get props => [
-        id,
-        durationText,
-        distanceKm,
-        hasTolls,
-        highwayName,
-        waypoints,
-      ];
+    id,
+    durationText,
+    distanceKm,
+    hasTolls,
+    highwayName,
+    waypoints,
+    corridorText,
+  ];
+}
+
+/// Dynamic intermediate city / town discovered along an actual driving route
+class CarpoolStopoverCityEntity extends Equatable {
+  final String name;
+  final int distanceKm;
+  final bool hasTolls;
+  final bool isOnRoute;
+  final int detourKm;
+  final double lat;
+  final double lng;
+  final String? subtitle;
+
+  const CarpoolStopoverCityEntity({
+    required this.name,
+    required this.distanceKm,
+    required this.hasTolls,
+    this.isOnRoute = true,
+    this.detourKm = 0,
+    required this.lat,
+    required this.lng,
+    this.subtitle,
+  });
+
+  @override
+  List<Object?> get props => [
+    name,
+    distanceKm,
+    hasTolls,
+    isOnRoute,
+    detourKm,
+    lat,
+    lng,
+    subtitle,
+  ];
 }
