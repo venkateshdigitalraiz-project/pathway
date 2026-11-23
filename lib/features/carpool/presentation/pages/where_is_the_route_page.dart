@@ -11,6 +11,7 @@ import '../../data/repositories/carpool_repository_impl.dart';
 import '../../data/repositories/carpool_routes_repository_impl.dart';
 import '../../domain/entities/carpool_place_entity.dart';
 import '../../domain/entities/carpool_route_option_entity.dart';
+import '../../domain/entities/carpool_temporary_ride_data.dart';
 import '../../domain/usecases/carpool_usecases.dart';
 import '../../domain/usecases/get_carpool_route_options_usecase.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
@@ -57,8 +58,12 @@ class WhereIsTheRoutePage extends StatelessWidget {
     final useCase = GetCarpoolRouteOptionsUseCase(repository);
 
     return BlocProvider<WhereIsTheRouteBloc>(
-      create: (_) => WhereIsTheRouteBloc(getRouteOptionsUseCase: useCase)
-        ..add(WhereIsTheRouteStarted(origin: origin, destination: destination)),
+      create: (_) {
+        // Clear any previous stale session data when starting a new route selection
+        CarpoolTemporaryRideData.instance.clear();
+        return WhereIsTheRouteBloc(getRouteOptionsUseCase: useCase)
+          ..add(WhereIsTheRouteStarted(origin: origin, destination: destination));
+      },
       child: const _WhereIsTheRouteView(),
     );
   }
@@ -76,6 +81,9 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
       GlobalKey<RealGoogleMapPickerState>();
   GoogleMapController? _mapController;
   bool _hasFittedCamera = false;
+  double? _userZoom;
+  double? _userCenterLat;
+  double? _userCenterLng;
 
   void _fitCameraToBounds(List<RouteCoordinate> waypoints) {
     if (waypoints.isEmpty) return;
@@ -130,13 +138,20 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
     }
   }
 
-  void _onNextPressed(BuildContext context, WhereIsTheRouteState state) {
+  void _onNextPressed(BuildContext context) {
+    final routeBloc = context.read<WhereIsTheRouteBloc>();
+    final state = routeBloc.state;
     if (state.origin == null || state.destination == null) return;
 
     final origin = state.origin!;
     final destination = state.destination!;
-    final selectedRoute = state.selectedRoute ??
-        (state.routes.isNotEmpty ? state.routes.first : null);
+    final selectedRoute = (state.routes.isNotEmpty &&
+            state.selectedIndex >= 0 &&
+            state.selectedIndex < state.routes.length)
+        ? state.routes[state.selectedIndex]
+        : (state.selectedRoute ??
+            CarpoolTemporaryRideData.instance.selectedRoute ??
+            (state.routes.isNotEmpty ? state.routes.first : null));
 
     final remoteDataSource = CarpoolMockDataSource();
     final repository = CarpoolRepositoryImpl(remoteDataSource);
@@ -157,21 +172,30 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
 
     // Pass the single user-selected radio route details to CarpoolStopoversPage
     if (selectedRoute != null) {
+      // Save toll object (distance/Km, duration, toll type) in temporary storage
+      CarpoolTemporaryRideData.instance.saveTollRoute(
+        type: selectedRoute.hasTolls ? 'toll' : 'no_toll',
+        duration: selectedRoute.durationText,
+        distance: selectedRoute.distanceKm.toDouble(),
+        hasTolls: selectedRoute.hasTolls,
+        routeOption: selectedRoute,
+      );
+
       offerBloc.add(
         CarpoolOfferRoutesInitialized(
           routes: [selectedRoute],
           selectedRoute: selectedRoute,
         ),
       );
-    }
 
-    if (selectedRoute != null) {
       offerBloc.add(
         CarpoolOfferCalculatePricing(
           originLat: origin.lat,
           originLng: origin.lng,
           destinationLat: destination.lat,
           destinationLng: destination.lng,
+          selectedDistanceKm: selectedRoute.distanceKm.toDouble(),
+          selectedDurationText: selectedRoute.durationText,
         ),
       );
     }
@@ -183,25 +207,42 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
   Widget build(BuildContext context) {
     return BlocConsumer<WhereIsTheRouteBloc, WhereIsTheRouteState>(
       listenWhen: (prev, curr) =>
-          !_hasFittedCamera &&
           prev.status != curr.status &&
           curr.status == WhereIsTheRouteStatus.success,
       listener: (context, state) {
-        if (!_hasFittedCamera &&
-            state.status == WhereIsTheRouteStatus.success &&
+        if (state.status == WhereIsTheRouteStatus.success &&
             state.routes.isNotEmpty) {
-          _hasFittedCamera = true;
-          final allPoints = <RouteCoordinate>[];
-          for (final r in state.routes) {
-            allPoints.addAll(r.waypoints);
+          // Immediately save the active selected route into session cache
+          final activeRoute = (state.selectedIndex >= 0 &&
+                  state.selectedIndex < state.routes.length)
+              ? state.routes[state.selectedIndex]
+              : state.routes.first;
+          CarpoolTemporaryRideData.instance.saveTollRoute(
+            type: activeRoute.hasTolls ? 'toll' : 'no_toll',
+            duration: activeRoute.durationText,
+            distance: activeRoute.distanceKm.toDouble(),
+            hasTolls: activeRoute.hasTolls,
+            routeOption: activeRoute,
+          );
+
+          if (!_hasFittedCamera) {
+            _hasFittedCamera = true;
+            final allPoints = <RouteCoordinate>[];
+            for (final r in state.routes) {
+              allPoints.addAll(r.waypoints);
+            }
+            if (state.origin != null) {
+              allPoints.add(
+                RouteCoordinate(state.origin!.lat, state.origin!.lng),
+              );
+            }
+            if (state.destination != null) {
+              allPoints.add(
+                RouteCoordinate(state.destination!.lat, state.destination!.lng),
+              );
+            }
+            _fitCameraToBounds(allPoints);
           }
-          if (state.origin != null) {
-            allPoints.add(RouteCoordinate(state.origin!.lat, state.origin!.lng));
-          }
-          if (state.destination != null) {
-            allPoints.add(RouteCoordinate(state.destination!.lat, state.destination!.lng));
-          }
-          _fitCameraToBounds(allPoints);
         }
       },
       builder: (context, state) {
@@ -308,9 +349,9 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
 
     return RealGoogleMapPicker(
       key: _mapKey,
-      centerLat: center.latitude,
-      centerLng: center.longitude,
-      zoom: initialZoom,
+      centerLat: _userCenterLat ?? center.latitude,
+      centerLng: _userCenterLng ?? center.longitude,
+      zoom: _userZoom ?? initialZoom,
       pickupPlace: origin,
       dropoffPlace: destination,
       routes: state.routes,
@@ -319,6 +360,28 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
         context.read<WhereIsTheRouteBloc>().add(
           WhereIsTheRouteOptionSelected(idx),
         );
+        if (idx >= 0 && idx < state.routes.length) {
+          final r = state.routes[idx];
+          CarpoolTemporaryRideData.instance.saveTollRoute(
+            type: r.hasTolls ? 'toll' : 'no_toll',
+            duration: r.durationText,
+            distance: r.distanceKm.toDouble(),
+            hasTolls: r.hasTolls,
+            routeOption: r,
+          );
+        }
+      },
+      onCameraMove: (lat, lng) {
+        _userCenterLat = lat;
+        _userCenterLng = lng;
+      },
+      onCameraIdle: (lat, lng) {
+        _userCenterLat = lat;
+        _userCenterLng = lng;
+        final zoom = _mapKey.currentState?.currentZoomLevel;
+        if (zoom != null) {
+          _userZoom = zoom.toDouble();
+        }
       },
       showCenterPin: false,
       showControls: false,
@@ -328,7 +391,7 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
-  // SCROLLABLE ROUTE OPTIONS CONTENT (4/10 Screen Height Sheet)
+  // SCROLLABLE ROUTE OPTIONS CONTENT (4/10 Screen Height Scrolling Data)
   // ══════════════════════════════════════════════════════════════════════════
   Widget _buildRouteOptionsContent(
     BuildContext context,
@@ -336,46 +399,28 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
   ) {
     return Container(
       width: double.infinity,
-      decoration: BoxDecoration(
+      decoration: const BoxDecoration(
         color: Colors.white,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.08),
-            blurRadius: 16,
-            offset: const Offset(0, -3),
-          ),
-        ],
+        border: Border(
+          top: BorderSide(color: Color(0xFFE2E8F0), width: 1.0),
+        ),
       ),
       child: Stack(
         children: [
-          // Scrollable route details (Auto-scrolls smoothly; map above remains fixed at 6/10)
+          // Scrollable route details (Scrolling data; map above remains fixed at 6/10)
           SingleChildScrollView(
             physics: const AlwaysScrollableScrollPhysics(
               parent: BouncingScrollPhysics(),
             ),
             padding: EdgeInsets.fromLTRB(
               22,
-              12,
+              16,
               22,
               MediaQuery.of(context).padding.bottom + 76, // Room for floating next button
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Top Drag Handle Indicator
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4.0,
-                    margin: const EdgeInsets.only(bottom: 10),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE2E8F0),
-                      borderRadius: BorderRadius.circular(3),
-                    ),
-                  ),
-                ),
-
                 // Live Duration Displayed ABOVE "What is your route?" Header
                 if (state.selectedRoute != null)
                   Padding(
@@ -475,6 +520,13 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
                         context.read<WhereIsTheRouteBloc>().add(
                           WhereIsTheRouteOptionSelected(index),
                         );
+                        CarpoolTemporaryRideData.instance.saveTollRoute(
+                          type: route.hasTolls ? 'toll' : 'no_toll',
+                          duration: route.durationText,
+                          distance: route.distanceKm.toDouble(),
+                          hasTolls: route.hasTolls,
+                          routeOption: route,
+                        );
                       },
                       splashColor: Colors.transparent,
                       highlightColor: Colors.transparent,
@@ -528,7 +580,7 @@ class _WhereIsTheRouteViewState extends State<_WhereIsTheRouteView> {
             right: 20,
             bottom: MediaQuery.of(context).padding.bottom + 14,
             child: InkWell(
-              onTap: () => _onNextPressed(context, state),
+              onTap: () => _onNextPressed(context),
               borderRadius: BorderRadius.circular(28),
               child: Container(
                 width: 54,

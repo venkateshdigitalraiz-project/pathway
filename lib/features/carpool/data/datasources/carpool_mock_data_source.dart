@@ -10,6 +10,7 @@ import '../../domain/entities/carpool_pricing_entity.dart';
 import '../../domain/entities/rejected_booking_entity.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
 import '../models/carpool_models.dart';
+import '../repositories/search_booking_rider_repository_impl.dart';
 import 'carpool_remote_data_source.dart';
 
 /// In-memory implementation so the app runs without a backend.
@@ -160,6 +161,46 @@ class CarpoolMockDataSource implements CarpoolRemoteDataSource {
   Future<List<CarpoolRideModel>> searchRides(
     CarpoolSearchRidesParams params,
   ) async {
+    try {
+      final repo = SearchBookingRiderRepositoryImpl();
+      final date = params.filter == CarpoolDayFilter.tomorrow
+          ? DateTime.now().add(const Duration(days: 1))
+          : DateTime.now();
+      final results = await repo.searchRides(
+        from: params.from,
+        to: params.to,
+        date: date,
+      );
+      if (results.isNotEmpty) {
+        return results.map((r) {
+          if (r is CarpoolRideModel) return r;
+          return CarpoolRideModel(
+            id: r.id,
+            driverName: r.driverName,
+            driverRating: r.driverRating,
+            driverTrips: r.driverTrips,
+            vehicle: r.vehicle,
+            from: r.from,
+            to: r.to,
+            departure: r.departure,
+            seats: r.seats,
+            pricePerSeat: r.pricePerSeat,
+            distanceKm: r.distanceKm,
+            status: r.status,
+            rideType: r.rideType,
+            totalBookings: r.totalBookings,
+            vehicleModel: r.vehicleModel,
+            vehicleNumber: r.vehicleNumber,
+            originCity: r.originCity,
+            destinationCity: r.destinationCity,
+            rideCode: r.rideCode,
+            driverPhone: r.driverPhone,
+            notes: r.notes,
+          );
+        }).toList();
+      }
+    } catch (_) {}
+
     await _latency();
     final now = DateTime.now();
     final day = params.filter == CarpoolDayFilter.tomorrow ? 1 : 0;

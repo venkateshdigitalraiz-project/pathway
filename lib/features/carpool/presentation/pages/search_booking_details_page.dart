@@ -77,6 +77,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
   }
 
   void _snack(String message, {bool isError = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -226,16 +227,21 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
           departure: ride.departureTime,
           seats: ride.availableSeats,
           pricePerSeat: ride.pricePerSeat,
-          distanceKm: 268,
+          distanceKm: ride.distanceKm.toInt(),
           status: CarpoolRideStatus.upcoming,
           rideType: CarpoolRideType.normal,
+          durationText: ride.estimatedDuration,
+          totalDistance: ride.totalDistance,
+          hasToll: ride.hasToll,
+          tollType: ride.tollType,
+          tollRoute: ride.tollRoute,
         );
         await BookRiderSeatUseCase(
           riderRepo,
         ).call(ride: carpoolEntity, seats: seats);
 
         if (mounted) {
-          _snack('Seat booked successfully! OTP code generated.');
+          _snack('Seat booked successfully!');
           Navigator.of(context).pop(true);
         }
       } catch (e) {
@@ -280,7 +286,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
 
               return Column(
                 children: [
-                  // 1. Top App Bar
+                  // 1. Top Navigation Bar
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
                     child: Row(
@@ -300,9 +306,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(
-                                    0xFF4C1CDD,
-                                  ).withOpacity(0.06),
+                                  color: const Color(0xFF4C1CDD).withOpacity(0.06),
                                   blurRadius: 10,
                                   offset: const Offset(0, 3),
                                 ),
@@ -329,15 +333,15 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                                   letterSpacing: -0.3,
                                 ),
                               ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'ID: #${widget.rideId}',
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF6B658C),
+                              if (ride != null && ride.rideCode.isNotEmpty)
+                                Text(
+                                  ride.rideCode,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF5D24F7),
+                                  ),
                                 ),
-                              ),
                             ],
                           ),
                         ),
@@ -354,18 +358,23 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                               width: 1,
                             ),
                           ),
-                          child: const Row(
+                          child: Row(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              Icon(
+                              const Icon(
                                 Icons.check_circle_rounded,
                                 size: 13,
                                 color: Color(0xFF059669),
                               ),
-                              SizedBox(width: 4),
+                              const SizedBox(width: 4),
                               Text(
-                                'Verified',
-                                style: TextStyle(
+                                (ride?.status.toUpperCase() == 'ACTIVE' ||
+                                        ride?.status.toUpperCase() == 'SUCCESS')
+                                    ? 'Active'
+                                    : (ride?.status.isNotEmpty == true
+                                        ? ride!.status
+                                        : 'Verified'),
+                                style: const TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w700,
                                   color: Color(0xFF059669),
@@ -450,23 +459,23 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                             padding: const EdgeInsets.fromLTRB(18, 6, 18, 120),
                             physics: const BouncingScrollPhysics(),
                             children: [
-                              // ── Route & Timeline Card ────────────────────────
+                              // Route, Journey Duration, Distance & Stopovers
                               _buildRouteCard(ride),
                               const SizedBox(height: 14),
 
-                              // ── Departure Time Card ──────────────────────────
+                              // Departure Time & Available Seats
                               _buildTimeCard(ride),
                               const SizedBox(height: 14),
 
-                              // ── Driver Profile Card ──────────────────────────
+                              // Driver Profile Card
                               _buildDriverCard(ride),
                               const SizedBox(height: 14),
 
-                              // ── Vehicle & Notes Card ─────────────────────────
+                              // Vehicle & Notes Card
                               _buildVehicleNotesCard(ride),
                               const SizedBox(height: 14),
 
-                              // ── Seat Selector & Fare Summary ─────────────────
+                              // Seat Selection & Total Payable Fare
                               _buildFareSummaryCard(context, state, ride),
                             ],
                           ),
@@ -477,7 +486,8 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
           ),
         ),
       ),
-      // 3. Floating Bottom Action Button
+
+      // 3. Bottom Floating Action Bar
       bottomNavigationBar:
           BlocBuilder<SearchBookingDetailsBloc, SearchBookingDetailsState>(
             builder: (context, state) {
@@ -485,7 +495,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
               if (ride == null) return const SizedBox.shrink();
 
               return Container(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 24),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: const BorderRadius.vertical(
@@ -598,7 +608,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
     );
   }
 
-  /// Route Card displaying Origin and Destination with live Lat/Lng badges
+  /// Route Card displaying Origin, Stopovers, Destination, Duration & Distance badges
   Widget _buildRouteCard(SearchBookingDetailsEntity ride) {
     return Container(
       decoration: BoxDecoration(
@@ -617,6 +627,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Header: Duration, Distance and Toll Badge
           Row(
             children: [
               Container(
@@ -633,7 +644,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
               ),
               const SizedBox(width: 8),
               const Text(
-                'Route Information',
+                'Route & Stops',
                 style: TextStyle(
                   fontSize: 14.5,
                   fontWeight: FontWeight.w800,
@@ -641,163 +652,247 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                 ),
               ),
               const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF7F5FE),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Text(
-                  'Highway Drive',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: Color(0xFF5D24F7),
+              if (ride.estimatedDuration.isNotEmpty ||
+                  ride.displayDistance.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFE8F0FE),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Timeline: Pickup -> Dropoff
-          IntrinsicHeight(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                // Indicators
-                Column(
-                  children: [
-                    const SizedBox(height: 2),
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF10B981),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF10B981).withOpacity(0.4),
-                            blurRadius: 5,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Expanded(
-                      child: Container(
-                        width: 2,
-                        margin: const EdgeInsets.symmetric(vertical: 2),
-                        color: const Color(0xFFDDD6FE),
-                      ),
-                    ),
-                    Container(
-                      width: 14,
-                      height: 14,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFEF4444),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2.5),
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFFEF4444).withOpacity(0.4),
-                            blurRadius: 5,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                  ],
-                ),
-                const SizedBox(width: 12),
-
-                // Texts
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      // Pickup
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'PICKUP POINT',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF10B981),
-                              letterSpacing: 0.6,
-                            ),
-                          ),
-                          const SizedBox(height: 1),
-                          Text(
-                            ride.cleanOrigin,
-                            style: const TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF140D43),
-                            ),
-                          ),
-                          if (ride.originLat != 0.0 && ride.originLng != 0.0)
-                            Text(
-                              'GPS: ${ride.originLat.toStringAsFixed(4)}, ${ride.originLng.toStringAsFixed(4)}',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF8B85A8),
-                              ),
-                            ),
-                        ],
+                      const Icon(
+                        Icons.timer_outlined,
+                        size: 13,
+                        color: Color(0xFF1A73E8),
                       ),
-                      const SizedBox(height: 14),
-
-                      // Dropoff
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'DROPOFF POINT',
-                            style: TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFFEF4444),
-                              letterSpacing: 0.6,
-                            ),
-                          ),
-                          const SizedBox(height: 1),
-                          Text(
-                            ride.cleanDestination,
-                            style: const TextStyle(
-                              fontSize: 14.5,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF140D43),
-                            ),
-                          ),
-                          if (ride.destinationLat != 0.0 &&
-                              ride.destinationLng != 0.0)
-                            Text(
-                              'GPS: ${ride.destinationLat.toStringAsFixed(4)}, ${ride.destinationLng.toStringAsFixed(4)}',
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w500,
-                                color: Color(0xFF8B85A8),
-                              ),
-                            ),
-                        ],
+                      const SizedBox(width: 4),
+                      Text(
+                        (ride.estimatedDuration.isNotEmpty &&
+                                ride.displayDistance.isNotEmpty)
+                            ? '${ride.estimatedDuration} • ${ride.displayDistance}'
+                            : (ride.estimatedDuration.isNotEmpty
+                                ? ride.estimatedDuration
+                                : ride.displayDistance),
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1A73E8),
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ],
-            ),
+            ],
           ),
+          const SizedBox(height: 16),
+
+          // Timeline: Pickup -> Stopovers -> Dropoff
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Timeline vertical indicators
+              Column(
+                children: [
+                  const SizedBox(height: 4),
+                  Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF10B981),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFF10B981).withOpacity(0.4),
+                          blurRadius: 5,
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    width: 2,
+                    height: ride.stopovers.isNotEmpty
+                        ? (ride.stopovers.length * 48.0)
+                        : 50.0,
+                    color: const Color(0xFFDDD6FE),
+                  ),
+                  Container(
+                    width: 14,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFEF4444),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: 2.5),
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFEF4444).withOpacity(0.4),
+                          blurRadius: 5,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                ],
+              ),
+              const SizedBox(width: 12),
+
+              // Locations content
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Pickup
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'ORIGIN / PICKUP',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF10B981),
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          ride.originAddress.isNotEmpty
+                              ? ride.originAddress
+                              : ride.cleanOrigin,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                        if (ride.originCity.isNotEmpty &&
+                            ride.originCity != ride.originAddress)
+                          Text(
+                            ride.originCity,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B658C),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+
+                    // Intermediate Stops
+                    if (ride.stopovers.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      ...ride.stopovers.map(
+                        (stop) => Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFF59E0B),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Via ${stop.city.isNotEmpty ? stop.city : stop.address}',
+                                  style: const TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                    ] else
+                      const SizedBox(height: 32),
+
+                    // Dropoff
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'DESTINATION / DROPOFF',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFEF4444),
+                            letterSpacing: 0.6,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          ride.destinationAddress.isNotEmpty
+                              ? ride.destinationAddress
+                              : ride.cleanDestination,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                        if (ride.destinationCity.isNotEmpty &&
+                            ride.destinationCity != ride.destinationAddress)
+                          Text(
+                            ride.destinationCity,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Color(0xFF6B658C),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          // Toll route notice if applicable
+          if (ride.hasToll || ride.tollType.toLowerCase() == 'toll') ...[
+            const SizedBox(height: 14),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF3C7),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Icon(
+                    Icons.toll_rounded,
+                    size: 14,
+                    color: Color(0xFFD97706),
+                  ),
+                  SizedBox(width: 6),
+                  Text(
+                    'This ride uses toll highways',
+                    style: TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
         ],
       ),
     );
   }
 
-  /// Departure Date & Time Card
+  /// Departure Date & Time Card with Seats Availability
   Widget _buildTimeCard(SearchBookingDetailsEntity ride) {
     return Container(
       decoration: BoxDecoration(
@@ -835,7 +930,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                 const Text(
                   'Departure Schedule',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w600,
                     color: Color(0xFF6B658C),
                   ),
@@ -867,7 +962,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  '${ride.availableSeats} Left',
+                  '${ride.availableSeats} of ${ride.totalSeats} Left',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -882,7 +977,7 @@ class _SearchBookingDetailsViewState extends State<_SearchBookingDetailsView> {
     );
   }
 
-  /// Driver Card with Rating, Phone Call button, and Verified Status
+  /// Driver Card with Rating and Quick Call Button
   Widget _buildDriverCard(SearchBookingDetailsEntity ride) {
     return Container(
       decoration: BoxDecoration(

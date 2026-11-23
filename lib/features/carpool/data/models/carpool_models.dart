@@ -85,6 +85,12 @@ class CarpoolRideModel extends CarpoolRideEntity {
     super.rideCode,
     super.driverPhone,
     super.notes,
+    super.durationText,
+    super.totalDistance,
+    super.hasToll,
+    super.tollType,
+    super.tollRoute,
+    super.stopovers,
   });
 
   /// Extracts place name, city name, and full address from various formats:
@@ -263,7 +269,14 @@ class CarpoolRideModel extends CarpoolRideEntity {
     final dLng = (json['destinationLng'] as num?)?.toDouble() ??
         (json['destinationCoordinates']?['lng'] as num?)?.toDouble();
 
+    final totalDist = (json['totalDistance'] as num?)?.toDouble() ??
+        (json['distanceKm'] as num?)?.toDouble() ??
+        (json['toll_route'] is Map
+            ? (json['toll_route']['distance'] as num?)?.toDouble()
+            : null);
+
     final distanceKm = (json['distanceKm'] as num?)?.toInt() ??
+        (totalDist?.toInt()) ??
         (json['distance'] as num?)?.toInt() ??
         CarpoolDistanceCalculator.calculateDistanceKm(
           from,
@@ -311,6 +324,42 @@ class CarpoolRideModel extends CarpoolRideEntity {
         json['phone']?.toString();
     final notes = json['notes']?.toString();
 
+    // 8. Toll Route, Duration & Stopovers
+    Map<String, dynamic>? tollRoute;
+    String? durationText;
+    if (json['toll_route'] is Map) {
+      tollRoute = (json['toll_route'] as Map)
+          .map((k, v) => MapEntry(k.toString(), v));
+      durationText = tollRoute['duration']?.toString();
+    } else if (json['tollRoute'] is Map) {
+      tollRoute = (json['tollRoute'] as Map)
+          .map((k, v) => MapEntry(k.toString(), v));
+      durationText = tollRoute['duration']?.toString();
+    } else if (json['duration'] != null) {
+      durationText = json['duration'].toString();
+    }
+
+    final hasToll = json['hasToll'] is bool
+        ? json['hasToll'] as bool
+        : (json['toll_type']?.toString().toLowerCase() == 'toll');
+
+    final tollType = json['toll_type']?.toString() ??
+        tollRoute?['type']?.toString();
+
+    List<Map<String, dynamic>>? stopoversList;
+    final rawStops =
+        json['stopover'] ?? json['stops'] ?? json['stopovers'];
+    if (rawStops is List) {
+      stopoversList = [];
+      for (final s in rawStops) {
+        if (s is Map<String, dynamic>) {
+          stopoversList.add(s);
+        } else if (s is Map) {
+          stopoversList.add(s.map((k, v) => MapEntry(k.toString(), v)));
+        }
+      }
+    }
+
     return CarpoolRideModel(
       id: json['id']?.toString() ??
           json['_id']?.toString() ??
@@ -335,6 +384,12 @@ class CarpoolRideModel extends CarpoolRideEntity {
       rideCode: rideCode,
       driverPhone: driverPhone,
       notes: notes,
+      durationText: durationText,
+      totalDistance: totalDist,
+      hasToll: hasToll,
+      tollType: tollType,
+      tollRoute: tollRoute,
+      stopovers: stopoversList,
     );
   }
 
@@ -367,11 +422,19 @@ class CarpoolRideModel extends CarpoolRideEntity {
     CarpoolRideStatus? status,
     int? seats,
     int? totalBookings,
+    String? vehicleModel,
+    String? vehicleNumber,
     String? originCity,
     String? destinationCity,
     String? rideCode,
     String? driverPhone,
     String? notes,
+    String? durationText,
+    double? totalDistance,
+    bool? hasToll,
+    String? tollType,
+    Map<String, dynamic>? tollRoute,
+    List<Map<String, dynamic>>? stopovers,
   }) =>
       CarpoolRideModel(
         id: id,
@@ -395,6 +458,12 @@ class CarpoolRideModel extends CarpoolRideEntity {
         rideCode: rideCode ?? this.rideCode,
         driverPhone: driverPhone ?? this.driverPhone,
         notes: notes ?? this.notes,
+        durationText: durationText ?? this.durationText,
+        totalDistance: totalDistance ?? this.totalDistance,
+        hasToll: hasToll ?? this.hasToll,
+        tollType: tollType ?? this.tollType,
+        tollRoute: tollRoute ?? this.tollRoute,
+        stopovers: stopovers ?? this.stopovers,
       );
 }
 

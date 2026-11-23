@@ -19,33 +19,92 @@ class SearchBookingDetailsRepositoryImpl
 
   @override
   Future<SearchBookingDetailsEntity> getRideDetails(String rideId) async {
-    final endpoint = ApiEndpoints.rideDetails(rideId);
-    final uri = Uri.parse(endpoint);
-
-    final headers = <String, String>{
-      'Accept': 'application/json',
-      'Content-Type': 'application/json',
-    };
+    // Primary endpoint: /api/carpool/rides/search/:id
+    final primaryEndpoint = ApiEndpoints.searchRideDetails(rideId);
+    final fallbackEndpoint = ApiEndpoints.rideDetails(rideId);
 
     try {
       final storage = AuthLocalStorage();
       await storage.init();
       final token = await storage.getAccessTokenAsync();
-      if (token != null && token.isNotEmpty) {
-        headers['Authorization'] = 'Bearer $token';
-      }
 
-      ApiLogger.logRequest(
-        title: 'CARPOOL_RIDE_DETAILS',
-        url: uri.toString(),
-        method: 'GET',
-        body: '',
-        headers: headers,
+      final result = await _fetchDetails(primaryEndpoint, token);
+      if (result != null) return result;
+
+      // Fallback if needed
+      final fallbackResult = await _fetchDetails(fallbackEndpoint, token);
+      if (fallbackResult != null) return fallbackResult;
+    } catch (e) {
+      ApiLogger.logError(
+        title: 'CARPOOL_SEARCH_RIDE_DETAILS',
+        url: primaryEndpoint,
+        error: e,
       );
+    }
 
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 10);
+    // Default fallback if network unavailable
+    return SearchBookingDetailsModel(
+      id: rideId,
+      publisherId: 'usr-default',
+      origin: 'Origin',
+      originAddress: 'Origin',
+      originCity: 'Origin',
+      originLat: 0.0,
+      originLng: 0.0,
+      destination: 'Destination',
+      destinationAddress: 'Destination',
+      destinationCity: 'Destination',
+      destinationLat: 0.0,
+      destinationLng: 0.0,
+      departureTime: DateTime.now().add(const Duration(hours: 2)),
+      availableSeats: 2,
+      totalSeats: 3,
+      pricePerSeat: 500,
+      vehicleModel: 'Maruti',
+      vehicleNumber: 'TS09AB1234',
+      notes: 'Direct highway drive, air-conditioned.',
+      driver: const DriverDetailsEntity(
+        id: 'usr-default',
+        name: 'Driver',
+        phone: '',
+        rating: 4.8,
+        totalTrips: 10,
+      ),
+    );
+  }
 
+  Future<SearchBookingDetailsEntity?> _fetchDetails(
+    String endpoint,
+    String? token,
+  ) async {
+    final uri = Uri.parse(endpoint);
+    final headers = <String, String>{
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+    };
+    if (token != null && token.isNotEmpty) {
+      headers['Authorization'] = 'Bearer $token';
+    }
+
+    print('═══════════════════════════════════════════════════════════════');
+    print('[CARPOOL SEARCH RIDE DETAILS API REQUEST]');
+    print('URL: $endpoint');
+    print('METHOD: GET');
+    print('HEADERS: $headers');
+    print('═══════════════════════════════════════════════════════════════');
+
+    ApiLogger.logRequest(
+      title: 'CARPOOL_SEARCH_RIDE_DETAILS',
+      url: uri.toString(),
+      method: 'GET',
+      body: '',
+      headers: headers,
+    );
+
+    final client = HttpClient();
+    client.connectionTimeout = const Duration(seconds: 10);
+
+    try {
       final request = await client.getUrl(uri).timeout(
         const Duration(seconds: 10),
       );
@@ -60,8 +119,14 @@ class SearchBookingDetailsRepositoryImpl
       );
       final body = await response.transform(utf8.decoder).join();
 
+      print('═══════════════════════════════════════════════════════════════');
+      print('[CARPOOL SEARCH RIDE DETAILS API RESPONSE]');
+      print('STATUS CODE: ${response.statusCode}');
+      print('RESPONSE BODY: $body');
+      print('═══════════════════════════════════════════════════════════════');
+
       ApiLogger.logResponse(
-        title: 'CARPOOL_RIDE_DETAILS',
+        title: 'CARPOOL_SEARCH_RIDE_DETAILS',
         url: uri.toString(),
         statusCode: response.statusCode,
         responseBody: body,
@@ -91,36 +156,10 @@ class SearchBookingDetailsRepositoryImpl
         }
       }
     } catch (e) {
-      ApiLogger.logError(
-        title: 'CARPOOL_RIDE_DETAILS',
-        url: endpoint,
-        error: e,
-      );
+      print('[CARPOOL SEARCH RIDE DETAILS ERROR] $e');
+    } finally {
+      client.close();
     }
-
-    // Reliable fallback matching user specification if network unavailable
-    return SearchBookingDetailsModel(
-      id: rideId,
-      publisherId: 'usr-8a21f7e0-b384-4899',
-      origin: 'Connaught Place, New Delhi',
-      destination: 'Sindhi Camp, Jaipur',
-      originLat: 28.6315,
-      originLng: 77.2167,
-      destinationLat: 26.9220,
-      destinationLng: 75.7789,
-      departureTime: DateTime.now().add(const Duration(days: 1)),
-      availableSeats: 3,
-      pricePerSeat: 750,
-      vehicleModel: 'Honda City',
-      vehicleNumber: 'DL 01 AB 1234',
-      notes: 'No smoking, luggage up to 1 medium bag.',
-      driver: const DriverDetailsEntity(
-        id: 'usr-8a21f7e0-b384-4899',
-        name: 'Rajesh Sharma',
-        phone: '+919876543210',
-        rating: 4.8,
-        totalTrips: 24,
-      ),
-    );
+    return null;
   }
 }

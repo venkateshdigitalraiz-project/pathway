@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:flutter/material.dart';
+
 import '../constants/api_endpoints.dart';
 import '../../features/carpool/domain/entities/carpool_route_option_entity.dart';
+import '../../features/carpool/domain/entities/carpool_stopover_entity.dart';
 
 /// Clean Architecture Utility to accurately calculate distances, durations, and place categories
 /// dynamically between any two locations using origin and destination geographic coordinates (Latitude & Longitude).
@@ -53,6 +56,11 @@ class CarpoolDistanceCalculator {
     'shamshabad': (lat: 17.2543, lng: 78.3976),
     'choutuppal': (lat: 17.2491, lng: 78.9038),
     'bhongir': (lat: 17.5113, lng: 78.8893),
+    'bhuvanagiri': (lat: 17.5113, lng: 78.8893),
+    'bommaipalle': (lat: 17.4856, lng: 78.8475),
+    'bommaipally': (lat: 17.4856, lng: 78.8475),
+    'bommaipalli': (lat: 17.4856, lng: 78.8475),
+    'bhommaipalle': (lat: 17.4856, lng: 78.8475),
     'patancheru': (lat: 17.5333, lng: 78.2667),
     'sangareddy': (lat: 17.6140, lng: 78.0816),
     'shadnagar': (lat: 17.0722, lng: 78.2088),
@@ -71,6 +79,9 @@ class CarpoolDistanceCalculator {
     'medak': (lat: 18.0469, lng: 78.2625),
     'vikarabad': (lat: 17.3364, lng: 77.9048),
     'kothagudem': (lat: 17.5500, lng: 80.6167),
+    'laxmidevipalli': (lat: 17.5350, lng: 80.6050),
+    'laxmidevipally': (lat: 17.5350, lng: 80.6050),
+    'lakshmidevipalli': (lat: 17.5350, lng: 80.6050),
     'bhadrachalam': (lat: 17.6688, lng: 80.8936),
     'jangaon': (lat: 17.7231, lng: 79.1558),
 
@@ -83,6 +94,9 @@ class CarpoolDistanceCalculator {
     'vizag': (lat: 17.6868, lng: 83.2185),
     'duvvada': (lat: 17.7051, lng: 83.1491),
     'anakapalle': (lat: 17.6913, lng: 83.0039),
+    'yellamanchili': (lat: 17.5539, lng: 82.8596),
+    'ellamanchili': (lat: 17.5539, lng: 82.8596),
+    'elamanchili': (lat: 17.5539, lng: 82.8596),
     'rajahmundry': (lat: 17.0005, lng: 81.8040),
     'rajahmandry': (lat: 17.0005, lng: 81.8040),
     'rajahmundri': (lat: 17.0005, lng: 81.8040),
@@ -196,8 +210,14 @@ class CarpoolDistanceCalculator {
     final tLng = toCoords.lng;
 
     // 2. Compute dynamic geodesic distance with 1.22x road winding factor if valid
-    if (fLat >= 6.5 && fLat <= 38.0 && fLng >= 68.0 && fLng <= 98.0 &&
-        tLat >= 6.5 && tLat <= 38.0 && tLng >= 68.0 && tLng <= 98.0) {
+    if (fLat >= 6.5 &&
+        fLat <= 38.0 &&
+        fLng >= 68.0 &&
+        fLng <= 98.0 &&
+        tLat >= 6.5 &&
+        tLat <= 38.0 &&
+        tLng >= 68.0 &&
+        tLng <= 98.0) {
       if ((fLat - tLat).abs() < 0.0001 && (fLng - tLng).abs() < 0.0001) {
         return 0;
       }
@@ -258,21 +278,22 @@ class CarpoolDistanceCalculator {
         );
       }
 
-      final uri = Uri.https(
-        'maps.googleapis.com',
-        '/maps/api/distancematrix/json',
-        {
-          'origins': originParam,
-          'destinations': destParam,
-          'key': apiKey,
-          'region': 'in',
-          'language': 'en',
-        },
-      );
+      final uri =
+          Uri.https('maps.googleapis.com', '/maps/api/distancematrix/json', {
+            'origins': originParam,
+            'destinations': destParam,
+            'key': apiKey,
+            'region': 'in',
+            'language': 'en',
+          });
 
       final client = HttpClient();
-      final request = await client.getUrl(uri).timeout(const Duration(seconds: 5));
-      final response = await request.close().timeout(const Duration(seconds: 5));
+      final request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 5));
+      final response = await request.close().timeout(
+        const Duration(seconds: 5),
+      );
 
       if (response.statusCode == 200) {
         final body = await response.transform(utf8.decoder).join();
@@ -287,7 +308,8 @@ class CarpoolDistanceCalculator {
               final distanceMap = elem['distance'] as Map<String, dynamic>?;
               final durationMap = elem['duration'] as Map<String, dynamic>?;
 
-              final int meters = distanceMap?['value'] as int? ?? (fallbackKm * 1000);
+              final int meters =
+                  distanceMap?['value'] as int? ?? (fallbackKm * 1000);
               final int km = (meters / 1000).round();
               final String durationText =
                   durationMap?['text'] as String? ?? fallbackDuration;
@@ -344,7 +366,10 @@ class CarpoolDistanceCalculator {
 
     final cleaned = trimmed.replaceAll(RegExp(r'''[{}"]'''), '');
     for (final segment in cleaned.split(',')) {
-      final key = segment.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '').trim();
+      final key = segment
+          .toLowerCase()
+          .replaceAll(RegExp(r'[^a-z0-9]'), '')
+          .trim();
       if (key.isNotEmpty) {
         final geo = _findGeo(key);
         if (geo != null) return geo;
@@ -353,7 +378,7 @@ class CarpoolDistanceCalculator {
     return null;
   }
 
-  /// Fetches exact GPS coordinates for any location string or placeId via Google Geocoding API
+  /// Fetches exact GPS coordinates for any location string or placeId via Google Places / Geocoding / OpenStreetMap API
   static Future<({double lat, double lng})?> fetchGeocodeCoordinates(
     String locationOrPlaceId, {
     bool isPlaceId = false,
@@ -380,15 +405,133 @@ class CarpoolDistanceCalculator {
       return (lat: cached.lat, lng: cached.lng);
     }
 
-    try {
-      final queryParams = isPlaceId
-          ? {'place_id': clean, 'key': apiKey}
-          : {'address': clean, 'key': apiKey, 'region': 'in'};
-      final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', queryParams);
+    final client = HttpClient();
 
-      final client = HttpClient();
-      final request = await client.getUrl(uri).timeout(const Duration(seconds: 4));
-      final response = await request.close().timeout(const Duration(seconds: 4));
+    // 1. If place ID from Google Places API (New or Legacy)
+    if (isPlaceId) {
+      final cleanPlaceId = clean.startsWith('places/')
+          ? clean.substring(7)
+          : clean;
+
+      // 1.1 Try Google Places API (New) Place Details
+      try {
+        final uriPlacesNew = Uri.parse(
+          'https://places.googleapis.com/v1/places/$cleanPlaceId?key=$apiKey',
+        );
+        final reqNew = await client
+            .getUrl(uriPlacesNew)
+            .timeout(const Duration(seconds: 4));
+        reqNew.headers.set('X-Goog-Api-Key', apiKey);
+        reqNew.headers.set(
+          'X-Goog-FieldMask',
+          'id,displayName,location,formattedAddress',
+        );
+        reqNew.headers.set('Content-Type', 'application/json');
+        final resNew = await reqNew.close().timeout(const Duration(seconds: 4));
+        if (resNew.statusCode == 200) {
+          final body = await resNew.transform(utf8.decoder).join();
+          final json = jsonDecode(body) as Map<String, dynamic>;
+          final loc = json['location'] as Map<String, dynamic>?;
+          final lat = (loc?['latitude'] as num?)?.toDouble();
+          final lng = (loc?['longitude'] as num?)?.toDouble();
+          if (lat != null &&
+              lng != null &&
+              lat >= 6.5 &&
+              lat <= 38.0 &&
+              lng >= 68.0 &&
+              lng <= 98.0) {
+            registerGeo(clean, lat, lng);
+            registerGeo(sanitized, lat, lng);
+            return (lat: lat, lng: lng);
+          }
+        }
+      } catch (_) {}
+
+      // 1.2 Try Google Places Legacy Place Details
+      try {
+        final uriPlacesLegacy =
+            Uri.https('maps.googleapis.com', '/maps/api/place/details/json', {
+              'place_id': cleanPlaceId,
+              'fields': 'geometry,name,formatted_address',
+              'key': apiKey,
+            });
+        final reqLegacy = await client
+            .getUrl(uriPlacesLegacy)
+            .timeout(const Duration(seconds: 4));
+        final resLegacy = await reqLegacy.close().timeout(
+          const Duration(seconds: 4),
+        );
+        if (resLegacy.statusCode == 200) {
+          final body = await resLegacy.transform(utf8.decoder).join();
+          final json = jsonDecode(body) as Map<String, dynamic>;
+          final result = json['result'] as Map<String, dynamic>?;
+          final geom = result?['geometry'] as Map<String, dynamic>?;
+          final loc = geom?['location'] as Map<String, dynamic>?;
+          final lat = (loc?['lat'] as num?)?.toDouble();
+          final lng = (loc?['lng'] as num?)?.toDouble();
+          if (lat != null &&
+              lng != null &&
+              lat >= 6.5 &&
+              lat <= 38.0 &&
+              lng >= 68.0 &&
+              lng <= 98.0) {
+            registerGeo(clean, lat, lng);
+            registerGeo(sanitized, lat, lng);
+            return (lat: lat, lng: lng);
+          }
+        }
+      } catch (_) {}
+
+      // 1.2 Try Google Geocoding API by place_id
+      try {
+        final uriGeocode = Uri.https(
+          'maps.googleapis.com',
+          '/maps/api/geocode/json',
+          {'place_id': cleanPlaceId, 'key': apiKey},
+        );
+        final reqGeo = await client
+            .getUrl(uriGeocode)
+            .timeout(const Duration(seconds: 4));
+        final resGeo = await reqGeo.close().timeout(const Duration(seconds: 4));
+        if (resGeo.statusCode == 200) {
+          final body = await resGeo.transform(utf8.decoder).join();
+          final json = jsonDecode(body) as Map<String, dynamic>;
+          final results = json['results'] as List<dynamic>?;
+          if (results != null && results.isNotEmpty) {
+            final first = results.first as Map<String, dynamic>;
+            final geom = first['geometry'] as Map<String, dynamic>?;
+            final loc = geom?['location'] as Map<String, dynamic>?;
+            final lat = (loc?['lat'] as num?)?.toDouble();
+            final lng = (loc?['lng'] as num?)?.toDouble();
+            if (lat != null &&
+                lng != null &&
+                lat >= 6.5 &&
+                lat <= 38.0 &&
+                lng >= 68.0 &&
+                lng <= 98.0) {
+              registerGeo(clean, lat, lng);
+              registerGeo(sanitized, lat, lng);
+              return (lat: lat, lng: lng);
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 2. Google Geocoding API by address
+    try {
+      final addressQuery = clean.contains(',') ? clean : '$clean, India';
+      final uri = Uri.https('maps.googleapis.com', '/maps/api/geocode/json', {
+        'address': addressQuery,
+        'key': apiKey,
+        'region': 'in',
+      });
+      final request = await client
+          .getUrl(uri)
+          .timeout(const Duration(seconds: 4));
+      final response = await request.close().timeout(
+        const Duration(seconds: 4),
+      );
 
       if (response.statusCode == 200) {
         final body = await response.transform(utf8.decoder).join();
@@ -401,8 +544,81 @@ class CarpoolDistanceCalculator {
           final lat = (loc?['lat'] as num?)?.toDouble();
           final lng = (loc?['lng'] as num?)?.toDouble();
 
-          if (lat != null && lng != null && lat >= 6.5 && lat <= 38.0 && lng >= 68.0 && lng <= 98.0) {
+          if (lat != null &&
+              lng != null &&
+              lat >= 6.5 &&
+              lat <= 38.0 &&
+              lng >= 68.0 &&
+              lng <= 98.0) {
             registerGeo(clean, lat, lng);
+            registerGeo(sanitized, lat, lng);
+            return (lat: lat, lng: lng);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 3. Fallback: OpenStreetMap Photon Geocoder (strictly India bounded)
+    try {
+      final photonUri = Uri.parse(
+        'https://photon.komoot.io/api/?q=${Uri.encodeComponent(clean)}&limit=5&bbox=68.1,6.7,97.4,37.1',
+      );
+      final reqPhoton = await client
+          .getUrl(photonUri)
+          .timeout(const Duration(seconds: 4));
+      reqPhoton.headers.set('User-Agent', 'PathwayCarpoolApp/1.0');
+      final resPhoton = await reqPhoton.close().timeout(
+        const Duration(seconds: 4),
+      );
+      if (resPhoton.statusCode == 200) {
+        final body = await resPhoton.transform(utf8.decoder).join();
+        final map = jsonDecode(body) as Map<String, dynamic>;
+        final features = map['features'] as List<dynamic>? ?? [];
+        if (features.isNotEmpty) {
+          final f = features.first as Map<String, dynamic>;
+          final geom = f['geometry'] as Map<String, dynamic>?;
+          final coords = geom?['coordinates'] as List<dynamic>?;
+          if (coords != null && coords.length >= 2) {
+            final lng = (coords[0] as num).toDouble();
+            final lat = (coords[1] as num).toDouble();
+            if (lat >= 6.5 && lat <= 38.0 && lng >= 68.0 && lng <= 98.0) {
+              registerGeo(clean, lat, lng);
+              registerGeo(sanitized, lat, lng);
+              return (lat: lat, lng: lng);
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // 4. Fallback: Nominatim Live Geocoder (India only)
+    try {
+      final nomUri = Uri.https('nominatim.openstreetmap.org', '/search', {
+        'q': clean,
+        'countrycodes': 'in',
+        'format': 'json',
+        'limit': '3',
+      });
+      final reqNom = await client
+          .getUrl(nomUri)
+          .timeout(const Duration(seconds: 4));
+      reqNom.headers.set('User-Agent', 'PathwayCarpoolApp/1.0');
+      final resNom = await reqNom.close().timeout(const Duration(seconds: 4));
+      if (resNom.statusCode == 200) {
+        final body = await resNom.transform(utf8.decoder).join();
+        final list = jsonDecode(body) as List<dynamic>? ?? [];
+        if (list.isNotEmpty) {
+          final first = list.first as Map<String, dynamic>;
+          final lat = double.tryParse((first['lat'] ?? '').toString());
+          final lng = double.tryParse((first['lon'] ?? '').toString());
+          if (lat != null &&
+              lng != null &&
+              lat >= 6.5 &&
+              lat <= 38.0 &&
+              lng >= 68.0 &&
+              lng <= 98.0) {
+            registerGeo(clean, lat, lng);
+            registerGeo(sanitized, lat, lng);
             return (lat: lat, lng: lng);
           }
         }
@@ -521,7 +737,8 @@ class CarpoolDistanceCalculator {
     final dLng = destLng - startLng;
     final lenSq = dLat * dLat + dLng * dLng;
     if (lenSq == 0) return 0.0;
-    return ((pointLat - startLat) * dLat + (pointLng - startLng) * dLng) / lenSq;
+    return ((pointLat - startLat) * dLat + (pointLng - startLng) * dLng) /
+        lenSq;
   }
 
   static double haversine(double lat1, double lon1, double lat2, double lon2) =>
@@ -566,7 +783,8 @@ class CarpoolDistanceCalculator {
     final stopoverProgress = <String, double>{};
     for (final stop in stopovers) {
       final pCoords = resolveCoordinates(stop);
-      final isPointValid = pCoords.lat >= 6.5 &&
+      final isPointValid =
+          pCoords.lat >= 6.5 &&
           pCoords.lat <= 38.0 &&
           pCoords.lng >= 68.0 &&
           pCoords.lng <= 98.0;
@@ -581,20 +799,214 @@ class CarpoolDistanceCalculator {
           pointLng: pCoords.lng,
         );
       } else if (isStartValid && isPointValid) {
-        stopoverProgress[stop] = _haversine(sLat, sLng, pCoords.lat, pCoords.lng);
+        stopoverProgress[stop] = _haversine(
+          sLat,
+          sLng,
+          pCoords.lat,
+          pCoords.lng,
+        );
       } else if (isDestValid && isPointValid) {
-        stopoverProgress[stop] = -_haversine(dLat, dLng, pCoords.lat, pCoords.lng);
+        stopoverProgress[stop] = -_haversine(
+          dLat,
+          dLng,
+          pCoords.lat,
+          pCoords.lng,
+        );
       } else {
-        final d1 = calculateDistanceKm(start, stop, fromLat: sLat, fromLng: sLng);
-        final d2 = calculateDistanceKm(stop, destination, toLat: dLat, toLng: dLng);
+        final d1 = calculateDistanceKm(
+          start,
+          stop,
+          fromLat: sLat,
+          fromLng: sLng,
+        );
+        final d2 = calculateDistanceKm(
+          stop,
+          destination,
+          toLat: dLat,
+          toLng: dLng,
+        );
         final total = d1 + d2;
         stopoverProgress[stop] = total > 0 ? (d1 / total) : 0.5;
       }
     }
 
     final sorted = List<String>.from(stopovers)
-      ..sort((a, b) =>
-          (stopoverProgress[a] ?? 0.0).compareTo(stopoverProgress[b] ?? 0.0));
+      ..sort(
+        (a, b) =>
+            (stopoverProgress[a] ?? 0.0).compareTo(stopoverProgress[b] ?? 0.0),
+      );
+    return sorted;
+  }
+
+  /// Calculates the cumulative route distance (in km) from start of polyline to closest point of [lat, lng].
+  static double cumulativeDistanceAlongPolyline(
+    double lat,
+    double lng,
+    List<({double lat, double lng})> polyline,
+  ) {
+    if (polyline.isEmpty) return 0.0;
+    if (polyline.length == 1) return 0.0;
+
+    double bestDistanceToSegment = double.infinity;
+    double bestCumulativeDistance = 0.0;
+    double accumulatedDistance = 0.0;
+
+    for (int i = 0; i < polyline.length - 1; i++) {
+      final p1 = polyline[i];
+      final p2 = polyline[i + 1];
+      final segDist = _haversine(p1.lat, p1.lng, p2.lat, p2.lng);
+
+      final dx = p2.lat - p1.lat;
+      final dy = p2.lng - p1.lng;
+      final lenSq = dx * dx + dy * dy;
+
+      double t = 0.0;
+      if (lenSq > 0) {
+        t = (((lat - p1.lat) * dx + (lng - p1.lng) * dy) / lenSq).clamp(
+          0.0,
+          1.0,
+        );
+      }
+      final projLat = p1.lat + t * dx;
+      final projLng = p1.lng + t * dy;
+      final d = _haversine(lat, lng, projLat, projLng);
+
+      if (d < bestDistanceToSegment) {
+        bestDistanceToSegment = d;
+        bestCumulativeDistance = accumulatedDistance + (t * segDist);
+      }
+
+      accumulatedDistance += segDist;
+    }
+
+    return bestCumulativeDistance;
+  }
+
+  /// Automatically reorders stopover objects strictly along the actual driving route corridor,
+  /// preventing duplicate locations and ensuring proper travel sequence (Origin -> Stopover 1 -> Stopover 2 -> ... -> Dest).
+  static List<CarpoolStopoverEntity> orderStopoverEntities({
+    required String start,
+    required String destination,
+    required List<CarpoolStopoverEntity> stopovers,
+    double? startLat,
+    double? startLng,
+    double? destLat,
+    double? destLng,
+    List<({double lat, double lng})>? routePolyline,
+  }) {
+    if (stopovers.isEmpty) return const [];
+
+    // 1. Prevent duplicates by city name or very close coordinates (< 1.5 km)
+    final unique = <CarpoolStopoverEntity>[];
+    for (final s in stopovers) {
+      final sCity = s.city.trim().toLowerCase();
+      final isDup = unique.any((u) {
+        final uCity = u.city.trim().toLowerCase();
+        final sameName = uCity.isNotEmpty && sCity.isNotEmpty && uCity == sCity;
+        final closeCoords =
+            (u.latitude - s.latitude).abs() < 0.015 &&
+            (u.longitude - s.longitude).abs() < 0.015;
+        return sameName || closeCoords;
+      });
+      if (!isDup) {
+        unique.add(s);
+      }
+    }
+
+    if (unique.length <= 1) return unique;
+
+    // 2. Exact polyline ordering if route waypoints are available
+    if (routePolyline != null && routePolyline.length >= 2) {
+      final progressMap = <CarpoolStopoverEntity, double>{};
+      for (final s in unique) {
+        progressMap[s] = cumulativeDistanceAlongPolyline(
+          s.latitude,
+          s.longitude,
+          routePolyline,
+        );
+      }
+      final sorted = List<CarpoolStopoverEntity>.from(unique)
+        ..sort(
+          (a, b) => (progressMap[a] ?? 0.0).compareTo(progressMap[b] ?? 0.0),
+        );
+      return sorted;
+    }
+
+    // 3. Fallback: Geodesic corridor progression along start -> dest vector
+    final sCoords = resolveCoordinates(
+      start,
+      preferredLat: (startLat != null && startLat != 0.0) ? startLat : null,
+      preferredLng: (startLng != null && startLng != 0.0) ? startLng : null,
+    );
+    final dCoords = resolveCoordinates(
+      destination,
+      preferredLat: (destLat != null && destLat != 0.0) ? destLat : null,
+      preferredLng: (destLng != null && destLng != 0.0) ? destLng : null,
+    );
+
+    final isStartValid =
+        sCoords.lat >= 6.5 &&
+        sCoords.lat <= 38.0 &&
+        sCoords.lng >= 68.0 &&
+        sCoords.lng <= 98.0;
+    final isDestValid =
+        dCoords.lat >= 6.5 &&
+        dCoords.lat <= 38.0 &&
+        dCoords.lng >= 68.0 &&
+        dCoords.lng <= 98.0;
+
+    final progressMap = <CarpoolStopoverEntity, double>{};
+    for (final s in unique) {
+      final isPointValid =
+          s.latitude >= 6.5 &&
+          s.latitude <= 38.0 &&
+          s.longitude >= 68.0 &&
+          s.longitude <= 98.0;
+
+      if (isStartValid && isDestValid && isPointValid) {
+        progressMap[s] = calculateCorridorProgression(
+          startLat: sCoords.lat,
+          startLng: sCoords.lng,
+          destLat: dCoords.lat,
+          destLng: dCoords.lng,
+          pointLat: s.latitude,
+          pointLng: s.longitude,
+        );
+      } else if (isStartValid && isPointValid) {
+        progressMap[s] = _haversine(
+          sCoords.lat,
+          sCoords.lng,
+          s.latitude,
+          s.longitude,
+        );
+      } else if (isDestValid && isPointValid) {
+        progressMap[s] = -_haversine(
+          dCoords.lat,
+          dCoords.lng,
+          s.latitude,
+          s.longitude,
+        );
+      } else {
+        final d1 = _haversine(
+          sCoords.lat,
+          sCoords.lng,
+          s.latitude,
+          s.longitude,
+        );
+        final d2 = _haversine(
+          s.latitude,
+          s.longitude,
+          dCoords.lat,
+          dCoords.lng,
+        );
+        final total = d1 + d2;
+        progressMap[s] = total > 0 ? (d1 / total) : 0.5;
+      }
+    }
+
+    final sorted = List<CarpoolStopoverEntity>.from(
+      unique,
+    )..sort((a, b) => (progressMap[a] ?? 0.0).compareTo(progressMap[b] ?? 0.0));
     return sorted;
   }
 
@@ -631,7 +1043,9 @@ class CarpoolDistanceCalculator {
     final tLng = dCoords.lng;
 
     final baseStopovers = currentStopovers
-        .where((s) => s.toLowerCase().trim() != newStopover.toLowerCase().trim())
+        .where(
+          (s) => s.toLowerCase().trim() != newStopover.toLowerCase().trim(),
+        )
         .toList();
 
     final orderedBase = orderStopoversInCorridor(
@@ -688,8 +1102,12 @@ class CarpoolDistanceCalculator {
     prevLng = fLng;
     for (final stop in orderedUpdated) {
       final stopGeo = findGeo(stop);
-      final sLat = (stop == newStopover && candidateLat != null) ? candidateLat : stopGeo?.lat;
-      final sLng = (stop == newStopover && candidateLng != null) ? candidateLng : stopGeo?.lng;
+      final sLat = (stop == newStopover && candidateLat != null)
+          ? candidateLat
+          : stopGeo?.lat;
+      final sLng = (stop == newStopover && candidateLng != null)
+          ? candidateLng
+          : stopGeo?.lng;
       updatedKm += calculateDistanceKm(
         prev,
         stop,
@@ -716,7 +1134,8 @@ class CarpoolDistanceCalculator {
     final currentDuration = estimateDuration(currentKm);
     final updatedDuration = estimateDuration(updatedKm);
 
-    final threshold = deviationThresholdKm ??
+    final threshold =
+        deviationThresholdKm ??
         max(defaultRouteDeviationThresholdKm, currentKm * 0.15);
     final isOnRoute = additionalKm <= threshold;
 
@@ -850,15 +1269,34 @@ class CarpoolDistanceCalculator {
     double x2,
     double y2,
   ) {
-    final dx = x2 - x1;
-    final dy = y2 - y1;
-    final lenSq = dx * dx + dy * dy;
-    if (lenSq == 0) return _haversine(px, py, x1, y1);
+    final d1 = _haversine(px, py, x1, y1);
+    final d2 = _haversine(px, py, x2, y2);
+    final minEndpoint = d1 < d2 ? d1 : d2;
 
-    final t = (((px - x1) * dx + (py - y1) * dy) / lenSq).clamp(0.0, 1.0);
-    final projLat = x1 + t * dx;
-    final projLng = y1 + t * dy;
-    return _haversine(px, py, projLat, projLng);
+    final dLat = x2 - x1;
+    final dLng = y2 - y1;
+    if (dLat.abs() < 1e-9 && dLng.abs() < 1e-9) {
+      return d1;
+    }
+
+    final midLatRad = ((x1 + x2) / 2.0) * pi / 180.0;
+    final cosMid = cos(midLatRad);
+
+    // Scale longitude delta by cos(lat) for accurate spherical distance projection
+    final dx = dLat;
+    final dy = dLng * cosMid;
+    final lenSq = dx * dx + dy * dy;
+    if (lenSq <= 0) return minEndpoint;
+
+    final pDx = px - x1;
+    final pDy = (py - y1) * cosMid;
+
+    final t = ((pDx * dx + pDy * dy) / lenSq).clamp(0.0, 1.0);
+    final projLat = x1 + t * dLat;
+    final projLng = y1 + t * dLng;
+    final dProj = _haversine(px, py, projLat, projLng);
+
+    return dProj < minEndpoint ? dProj : minEndpoint;
   }
 
   static List<PlaceGeoInfo> getRouteBasedSuggestions({
@@ -912,12 +1350,15 @@ class CarpoolDistanceCalculator {
     final startKey = _sanitizeKey(start);
     final destKey = _sanitizeKey(destination);
 
-    final candidates = <({
-      PlaceGeoInfo geo,
-      double distToPolyline,
-      int detourKm,
-      double progress
-    })>[];
+    final candidates =
+        <
+          ({
+            PlaceGeoInfo geo,
+            double distToPolyline,
+            int detourKm,
+            double progress,
+          })
+        >[];
 
     final minLat = min(fromLat, toLat) - 0.28;
     final maxLat = max(fromLat, toLat) + 0.28;
@@ -1012,7 +1453,7 @@ class CarpoolDistanceCalculator {
     required String destinationName,
     required List<({double lat, double lng})> polyline,
     List<String> stepTownHints = const [],
-    double maxDeviationKm = 26.0,
+    double maxDeviationKm = 10.0,
   }) {
     final cleanOrigin = originName.split(',').first.trim();
     final cleanDest = destinationName.split(',').first.trim();
@@ -1035,9 +1476,14 @@ class CarpoolDistanceCalculator {
       final coords = entry.value;
       final d = distanceToPolyline(coords.lat, coords.lng, polyline);
       if (d <= maxDeviationKm) {
-        final prog = _calculateProgressAlongPolyline(coords.lat, coords.lng, polyline);
+        final prog = _calculateProgressAlongPolyline(
+          coords.lat,
+          coords.lng,
+          polyline,
+        );
         if (prog > 0.08 && prog < 0.92) {
-          final displayName = entry.key[0].toUpperCase() + entry.key.substring(1);
+          final displayName =
+              entry.key[0].toUpperCase() + entry.key.substring(1);
           candidates.add((name: displayName, progress: prog, dist: d));
         }
       }
@@ -1052,7 +1498,11 @@ class CarpoolDistanceCalculator {
       final geo = entry.value;
       final d = distanceToPolyline(geo.lat, geo.lng, polyline);
       if (d <= maxDeviationKm) {
-        final prog = _calculateProgressAlongPolyline(geo.lat, geo.lng, polyline);
+        final prog = _calculateProgressAlongPolyline(
+          geo.lat,
+          geo.lng,
+          polyline,
+        );
         if (prog > 0.08 && prog < 0.92) {
           final displayName = geo.name.split(',').first.trim();
           candidates.add((name: displayName, progress: prog, dist: d));
@@ -1090,7 +1540,7 @@ class CarpoolDistanceCalculator {
     required List<({double lat, double lng})> polyline,
     required bool hasTolls,
     required int totalDistanceKm,
-    double maxCorridorDeviationKm = 24.0,
+    double maxCorridorDeviationKm = 10.0,
   }) {
     if (polyline.length < 2) return const [];
 
@@ -1099,13 +1549,10 @@ class CarpoolDistanceCalculator {
     final origKey = _sanitizeKey(cleanOrigin);
     final destKey = _sanitizeKey(cleanDest);
 
-    final candidates = <({
-      String name,
-      double progress,
-      double dist,
-      double lat,
-      double lng,
-    })>[];
+    final candidates =
+        <
+          ({String name, double progress, double dist, double lat, double lng})
+        >[];
 
     // 1. Known geographic nodes along the driving polyline
     for (final entry in _knownCityCoordinates.entries) {
@@ -1117,9 +1564,14 @@ class CarpoolDistanceCalculator {
       final coords = entry.value;
       final d = distanceToPolyline(coords.lat, coords.lng, polyline);
       if (d <= maxCorridorDeviationKm) {
-        final prog = _calculateProgressAlongPolyline(coords.lat, coords.lng, polyline);
+        final prog = _calculateProgressAlongPolyline(
+          coords.lat,
+          coords.lng,
+          polyline,
+        );
         if (prog > 0.05 && prog < 0.95) {
-          final displayName = entry.key[0].toUpperCase() + entry.key.substring(1);
+          final displayName =
+              entry.key[0].toUpperCase() + entry.key.substring(1);
           candidates.add((
             name: displayName,
             progress: prog,
@@ -1140,7 +1592,11 @@ class CarpoolDistanceCalculator {
       final geo = entry.value;
       final d = distanceToPolyline(geo.lat, geo.lng, polyline);
       if (d <= maxCorridorDeviationKm) {
-        final prog = _calculateProgressAlongPolyline(geo.lat, geo.lng, polyline);
+        final prog = _calculateProgressAlongPolyline(
+          geo.lat,
+          geo.lng,
+          polyline,
+        );
         if (prog > 0.05 && prog < 0.95) {
           final displayName = geo.name.split(',').first.trim();
           candidates.add((
@@ -1163,8 +1619,11 @@ class CarpoolDistanceCalculator {
     for (final c in candidates) {
       if ((c.progress - lastProgress).abs() >= 0.08) {
         lastProgress = c.progress;
-        final cityDist = (totalDistanceKm * c.progress).round().clamp(1, totalDistanceKm);
-        final isOnRoute = c.dist <= 18.0;
+        final cityDist = (totalDistanceKm * c.progress).round().clamp(
+          1,
+          totalDistanceKm,
+        );
+        final isOnRoute = c.dist <= 10.0;
         final detourKm = isOnRoute ? 0 : (c.dist * 1.5).round();
 
         results.add(
@@ -1216,7 +1675,10 @@ class CarpoolDistanceCalculator {
 
       double t = 0.0;
       if (lenSq > 0) {
-        t = (((lng - p1.lng) * dx + (lat - p1.lat) * dy) / lenSq).clamp(0.0, 1.0);
+        t = (((lng - p1.lng) * dx + (lat - p1.lat) * dy) / lenSq).clamp(
+          0.0,
+          1.0,
+        );
       }
       final projLat = p1.lat + t * dy;
       final projLng = p1.lng + t * dx;
@@ -1244,8 +1706,20 @@ class CarpoolDistanceCalculator {
     double? destLng,
     List<String> currentStopovers = const [],
     double? deviationThresholdKm,
+    List<({double lat, double lng})>? routePolyline,
+    String? corridorText,
+    String? routeName,
+    double maxDistanceToRouteKm = 10.0,
   }) {
-    if (candidateLat != null && candidateLng != null) {
+    final bool hasValidCandidateCoords =
+        candidateLat != null &&
+        candidateLng != null &&
+        candidateLat >= 6.5 &&
+        candidateLat <= 38.0 &&
+        candidateLng >= 68.0 &&
+        candidateLng <= 98.0;
+
+    if (hasValidCandidateCoords) {
       registerGeo(candidateName, candidateLat, candidateLng);
     }
 
@@ -1258,56 +1732,121 @@ class CarpoolDistanceCalculator {
       startLng: startLng,
       destLat: destLat,
       destLng: destLng,
-      candidateLat: candidateLat,
-      candidateLng: candidateLng,
+      candidateLat: hasValidCandidateCoords ? candidateLat : null,
+      candidateLng: hasValidCandidateCoords ? candidateLng : null,
       deviationThresholdKm: deviationThresholdKm,
     );
 
-    final cGeo = (candidateLat != null && candidateLng != null)
-        ? null
-        : findGeo(candidateName);
-    final lat = candidateLat ?? cGeo?.lat;
-    final lng = candidateLng ?? cGeo?.lng;
-
-    final sCoords = resolveCoordinates(
-      start,
-      preferredLat: (startLat != null && startLat != 0.0) ? startLat : null,
-      preferredLng: (startLng != null && startLng != 0.0) ? startLng : null,
-    );
-    final dCoords = resolveCoordinates(
-      destination,
-      preferredLat: (destLat != null && destLat != 0.0) ? destLat : null,
-      preferredLng: (destLng != null && destLng != 0.0) ? destLng : null,
-    );
-    final fLat = sCoords.lat;
-    final fLng = sCoords.lng;
-    final tLat = dCoords.lat;
-    final tLng = dCoords.lng;
-
-    bool isPolylineClose = true;
-    if (lat != null &&
-        lng != null &&
-        fLat != null &&
-        fLng != null &&
-        tLat != null &&
-        tLng != null) {
-      final polyline = generateDrivingRouteWaypoints(
-        fromLat: fLat,
-        fromLng: fLng,
-        toLat: tLat,
-        toLng: tLng,
-      );
-      final distPoly = distanceToPolyline(lat, lng, polyline);
-      if (distPoly > 38.0) {
-        isPolylineClose = false;
+    final cGeo = hasValidCandidateCoords ? null : findGeo(candidateName);
+    var lat = hasValidCandidateCoords ? candidateLat : (cGeo?.lat);
+    var lng = hasValidCandidateCoords ? candidateLng : (cGeo?.lng);
+    if (lat == null || lng == null || lat < 6.5 || lat > 38.0) {
+      final resolved = resolveCoordinates(candidateName);
+      if (resolved.lat >= 6.5 && resolved.lat <= 38.0) {
+        lat = resolved.lat;
+        lng = resolved.lng;
       }
     }
 
-    final threshold = deviationThresholdKm ?? defaultRouteDeviationThresholdKm;
-    final maxAllowedDetour = max(threshold, adj.currentTotalKm * 0.18);
-    final isDetourAcceptable = adj.additionalKm <= maxAllowedDetour;
+    double distPoly = 9999.0;
+    int polyCount = 0;
 
-    final bool isOnRoute = isPolylineClose && isDetourAcceptable;
+    if (lat != null && lng != null && lat >= 6.5 && lat <= 38.0) {
+      // 1. Calculate minimum distance to all consecutive segments of decoded driving route polyline
+      if (routePolyline != null && routePolyline.length >= 2) {
+        distPoly = distanceToPolyline(lat, lng, routePolyline);
+        polyCount = routePolyline.length;
+      }
+
+      // 2. If corridor text specifies corridor towns (e.g. Hyderabad -> Bhongir -> Kothagudem -> Yellamanchili),
+      // evaluate against corridor milestone segments to guarantee proper coverage along the selected route
+      if (corridorText != null && corridorText.isNotEmpty) {
+        final sCoords = resolveCoordinates(
+          start,
+          preferredLat: (startLat != null && startLat != 0.0) ? startLat : null,
+          preferredLng: (startLng != null && startLng != 0.0) ? startLng : null,
+        );
+        final dCoords = resolveCoordinates(
+          destination,
+          preferredLat: (destLat != null && destLat != 0.0) ? destLat : null,
+          preferredLng: (destLng != null && destLng != 0.0) ? destLng : null,
+        );
+
+        final milestones = <({double lat, double lng})>[];
+        if (sCoords.lat >= 6.5 && sCoords.lat <= 38.0) {
+          milestones.add((lat: sCoords.lat, lng: sCoords.lng));
+        }
+
+        final towns = corridorText
+            .split(RegExp(r'\s*(?:→|->)\s*'))
+            .map((s) => s.trim())
+            .where(
+              (s) =>
+                  s.isNotEmpty &&
+                  s.toLowerCase() != start.toLowerCase() &&
+                  s.toLowerCase() != destination.toLowerCase(),
+            )
+            .toList();
+
+        for (final t in towns) {
+          final geo = findGeo(t);
+          final double tLat = geo?.lat ?? resolveCoordinates(t).lat;
+          final double tLng = geo?.lng ?? resolveCoordinates(t).lng;
+          if (tLat >= 6.5 && tLat <= 38.0 && tLng >= 68.0 && tLng <= 98.0) {
+            milestones.add((lat: tLat, lng: tLng));
+          }
+        }
+
+        if (dCoords.lat >= 6.5 && dCoords.lat <= 38.0) {
+          milestones.add((lat: dCoords.lat, lng: dCoords.lng));
+        }
+
+        if (milestones.length >= 2) {
+          final synthesized = <({double lat, double lng})>[];
+          for (int m = 0; m < milestones.length - 1; m++) {
+            final legPoints = generateDrivingRouteWaypoints(
+              fromLat: milestones[m].lat,
+              fromLng: milestones[m].lng,
+              toLat: milestones[m + 1].lat,
+              toLng: milestones[m + 1].lng,
+            );
+            synthesized.addAll(legPoints);
+          }
+          final distCorridor = distanceToPolyline(lat, lng, synthesized);
+          if (distCorridor < distPoly) {
+            distPoly = distCorridor;
+          }
+          if (polyCount == 0) {
+            polyCount = synthesized.length;
+          }
+        }
+      }
+    }
+
+    // Strict 10 KM validation against the selected driving route polyline
+    final bool isOnRoute = distPoly <= maxDistanceToRouteKm;
+
+    // Requirement 8: Explicit debug logging
+    final effectiveRouteName = routeName ?? corridorText ?? 'Selected Route';
+    debugPrint(
+      '═══════════════════════════════════════════════════════════════',
+    );
+    debugPrint(
+      '[RouteValidation] Searched city: $candidateName (${lat?.toStringAsFixed(4)}, ${lng?.toStringAsFixed(4)})',
+    );
+    debugPrint('[RouteValidation] Selected route: $effectiveRouteName');
+    debugPrint(
+      '[RouteValidation] Decoded polyline coordinate count: $polyCount',
+    );
+    debugPrint(
+      '[RouteValidation] Minimum calculated distance: ${distPoly.toStringAsFixed(2)} KM',
+    );
+    debugPrint(
+      '[RouteValidation] Final result: ${isOnRoute ? "ACCEPT (<= 10.0 KM)" : "REJECT (> 10.0 KM)"}',
+    );
+    debugPrint(
+      '═══════════════════════════════════════════════════════════════',
+    );
 
     return RouteAdjustment(
       currentTotalKm: adj.currentTotalKm,
@@ -1317,6 +1856,7 @@ class CarpoolDistanceCalculator {
       updatedDuration: adj.updatedDuration,
       additionalMinutes: adj.additionalMinutes,
       isOnRoute: isOnRoute,
+      distanceToRouteKm: distPoly,
     );
   }
 
@@ -1390,7 +1930,8 @@ class CarpoolDistanceCalculator {
     for (final entry in _knownCityCoordinates.entries) {
       if (entry.key.length >= 4 &&
           (key.contains(entry.key) || entry.key.contains(key))) {
-        final formattedName = '${entry.key[0].toUpperCase()}${entry.key.substring(1)}';
+        final formattedName =
+            '${entry.key[0].toUpperCase()}${entry.key.substring(1)}';
         return PlaceGeoInfo(
           name: formattedName,
           lat: entry.value.lat,
@@ -1409,7 +1950,8 @@ class CarpoolDistanceCalculator {
     const double r = 6371.0; // Earth radius in km
     final dLat = (lat2 - lat1) * (pi / 180.0);
     final dLon = (lon2 - lon1) * (pi / 180.0);
-    final a = sin(dLat / 2) * sin(dLat / 2) +
+    final a =
+        sin(dLat / 2) * sin(dLat / 2) +
         cos(lat1 * (pi / 180.0)) *
             cos(lat2 * (pi / 180.0)) *
             sin(dLon / 2) *
@@ -1420,18 +1962,22 @@ class CarpoolDistanceCalculator {
 
   static List<PlaceGeoInfo> getAllVillagesAndTowns() {
     return _dynamicGeoCache.values
-        .where((g) =>
-            g.type.toLowerCase().contains('village') ||
-            g.type.toLowerCase().contains('town') ||
-            g.type.toLowerCase().contains('mandal'))
+        .where(
+          (g) =>
+              g.type.toLowerCase().contains('village') ||
+              g.type.toLowerCase().contains('town') ||
+              g.type.toLowerCase().contains('mandal'),
+        )
         .toList();
   }
 
   static List<PlaceGeoInfo> getAllCities() {
     return _dynamicGeoCache.values
-        .where((g) =>
-            g.type.toLowerCase().contains('city') ||
-            g.type.toLowerCase().contains('metro'))
+        .where(
+          (g) =>
+              g.type.toLowerCase().contains('city') ||
+              g.type.toLowerCase().contains('metro'),
+        )
         .toList();
   }
 }
@@ -1454,7 +2000,8 @@ class PlaceGeoInfo {
   });
 
   String get subtitle => '$type • $district, $state';
-  String get coordinatesDisplay => '${lat.toStringAsFixed(4)}° N, ${lng.toStringAsFixed(4)}° E';
+  String get coordinatesDisplay =>
+      '${lat.toStringAsFixed(4)}° N, ${lng.toStringAsFixed(4)}° E';
 
   @override
   bool operator ==(Object other) =>
@@ -1488,6 +2035,7 @@ class RouteAdjustment {
   final String updatedDuration;
   final int additionalMinutes;
   final bool isOnRoute;
+  final double distanceToRouteKm;
 
   const RouteAdjustment({
     required this.currentTotalKm,
@@ -1497,6 +2045,7 @@ class RouteAdjustment {
     required this.updatedDuration,
     required this.additionalMinutes,
     required this.isOnRoute,
+    this.distanceToRouteKm = 0.0,
   });
 
   String get additionalTimeText {

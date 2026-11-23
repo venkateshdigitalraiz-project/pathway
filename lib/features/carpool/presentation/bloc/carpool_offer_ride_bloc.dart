@@ -12,6 +12,8 @@ import '../../domain/entities/carpool_entities.dart';
 import '../../domain/entities/carpool_place_entity.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
 import '../../domain/entities/carpool_route_option_entity.dart';
+import '../../domain/entities/carpool_stopover_entity.dart';
+import '../../domain/entities/carpool_temporary_ride_data.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
 import '../../domain/usecases/carpool_usecases.dart';
 import '../../domain/usecases/get_carpool_route_options_usecase.dart';
@@ -57,12 +59,16 @@ class CarpoolOfferCalculatePricing extends CarpoolOfferRideEvent {
   final double? originLng;
   final double? destinationLat;
   final double? destinationLng;
+  final double? selectedDistanceKm;
+  final String? selectedDurationText;
 
   const CarpoolOfferCalculatePricing({
     this.originLat,
     this.originLng,
     this.destinationLat,
     this.destinationLng,
+    this.selectedDistanceKm,
+    this.selectedDurationText,
   });
 
   @override
@@ -71,6 +77,8 @@ class CarpoolOfferCalculatePricing extends CarpoolOfferRideEvent {
     originLng,
     destinationLat,
     destinationLng,
+    selectedDistanceKm,
+    selectedDurationText,
   ];
 }
 
@@ -121,7 +129,31 @@ class CarpoolOfferRideTypeChanged extends CarpoolOfferRideEvent {
 }
 
 class CarpoolOfferPublishPressed extends CarpoolOfferRideEvent {
-  const CarpoolOfferPublishPressed();
+  final List<CarpoolStopoverEntity>? stopovers;
+  final double? totalDistance;
+  final String? durationText;
+  final bool? hasToll;
+  final String? tollType;
+  final Map<String, dynamic>? tollRoute;
+
+  const CarpoolOfferPublishPressed({
+    this.stopovers,
+    this.totalDistance,
+    this.durationText,
+    this.hasToll,
+    this.tollType,
+    this.tollRoute,
+  });
+
+  @override
+  List<Object?> get props => [
+    stopovers,
+    totalDistance,
+    durationText,
+    hasToll,
+    tollType,
+    tollRoute,
+  ];
 }
 
 class CarpoolOfferVehicleChanged extends CarpoolOfferRideEvent {
@@ -135,19 +167,29 @@ class CarpoolOfferVehicleChanged extends CarpoolOfferRideEvent {
 }
 
 class CarpoolOfferStopoverToggled extends CarpoolOfferRideEvent {
-  const CarpoolOfferStopoverToggled(this.stopover);
+  const CarpoolOfferStopoverToggled(this.stopover, {this.stopoverObject});
   final String stopover;
+  final CarpoolStopoverEntity? stopoverObject;
 
   @override
-  List<Object?> get props => [stopover];
+  List<Object?> get props => [stopover, stopoverObject];
 }
 
 class CarpoolOfferStopoverAdded extends CarpoolOfferRideEvent {
-  const CarpoolOfferStopoverAdded(this.stopover);
+  const CarpoolOfferStopoverAdded(this.stopover, {this.stopoverObject});
   final String stopover;
+  final CarpoolStopoverEntity? stopoverObject;
 
   @override
-  List<Object?> get props => [stopover];
+  List<Object?> get props => [stopover, stopoverObject];
+}
+
+class CarpoolOfferStopoverObjectsUpdated extends CarpoolOfferRideEvent {
+  const CarpoolOfferStopoverObjectsUpdated(this.stopovers);
+  final List<CarpoolStopoverEntity> stopovers;
+
+  @override
+  List<Object?> get props => [stopovers];
 }
 
 class CarpoolOfferStopoverRemoved extends CarpoolOfferRideEvent {
@@ -233,6 +275,7 @@ class CarpoolOfferRideState extends Equatable {
     this.error,
     this.stopovers = const [],
     this.selectedStopovers = const {},
+    this.stopoverObjects = const [],
     this.pricingCalculation,
     this.isPricingLoading = false,
     this.vehicleModel = '',
@@ -257,6 +300,7 @@ class CarpoolOfferRideState extends Equatable {
       departure: DateTime(n.year, n.month, n.day, 9),
       stopovers: const [],
       selectedStopovers: const {},
+      stopoverObjects: const [],
       pricePerSeat: null,
       vehicleModel: '',
       vehicleNumber: '',
@@ -284,6 +328,7 @@ class CarpoolOfferRideState extends Equatable {
   final String? error;
   final List<String> stopovers;
   final Set<String> selectedStopovers;
+  final List<CarpoolStopoverEntity> stopoverObjects;
   final CarpoolPricingEntity? pricingCalculation;
   final bool isPricingLoading;
   final String vehicleModel;
@@ -318,6 +363,7 @@ class CarpoolOfferRideState extends Equatable {
     String? error,
     List<String>? stopovers,
     Set<String>? selectedStopovers,
+    List<CarpoolStopoverEntity>? stopoverObjects,
     CarpoolPricingEntity? pricingCalculation,
     bool clearPricing = false,
     bool? isPricingLoading,
@@ -347,6 +393,7 @@ class CarpoolOfferRideState extends Equatable {
     error: error,
     stopovers: stopovers ?? this.stopovers,
     selectedStopovers: selectedStopovers ?? this.selectedStopovers,
+    stopoverObjects: stopoverObjects ?? this.stopoverObjects,
     pricingCalculation: clearPricing
         ? null
         : (pricingCalculation ?? this.pricingCalculation),
@@ -380,6 +427,7 @@ class CarpoolOfferRideState extends Equatable {
     error,
     stopovers,
     selectedStopovers,
+    stopoverObjects,
     pricingCalculation,
     isPricingLoading,
     vehicleModel,
@@ -427,6 +475,7 @@ class CarpoolOfferRideBloc
           toLng: 0.0,
           stopovers: const [],
           selectedStopovers: const {},
+          stopoverObjects: const [],
           clearPrice: true,
           clearPricing: true,
           availableRoutes: const [],
@@ -483,48 +532,282 @@ class CarpoolOfferRideBloc
     });
     on<CarpoolOfferPublishPressed>(_onPublish);
     on<CarpoolOfferStopoverToggled>((e, emit) {
-      final updated = Set<String>.from(state.selectedStopovers);
-      if (updated.contains(e.stopover)) {
-        updated.remove(e.stopover);
+      final candidateName = e.stopover.trim();
+      final updatedSelected = Set<String>.from(state.selectedStopovers);
+      final currentObjects =
+          List<CarpoolStopoverEntity>.from(state.stopoverObjects);
+
+      if (updatedSelected.contains(candidateName)) {
+        updatedSelected.remove(candidateName);
+        currentObjects.removeWhere((o) =>
+            o.city.trim().toLowerCase() == candidateName.toLowerCase() ||
+            o.name.trim().toLowerCase() == candidateName.toLowerCase());
+        final updatedNames = currentObjects.map((o) => o.name).toList();
+        emit(
+          state.copyWith(
+            stopovers: updatedNames,
+            selectedStopovers: updatedSelected,
+            stopoverObjects: currentObjects,
+            clearRoutesError: true,
+          ),
+        );
       } else {
-        updated.add(e.stopover);
+        // Enforce 10 KM validation against selected route
+        List<({double lat, double lng})>? polyline;
+        if (state.selectedRouteOption != null &&
+            state.selectedRouteOption!.waypoints.isNotEmpty) {
+          polyline = state.selectedRouteOption!.waypoints
+              .map((w) => (lat: w.lat, lng: w.lng))
+              .toList();
+        }
+
+        double candidateLat = 0.0;
+        double candidateLng = 0.0;
+        String candidateAddress = candidateName;
+        String candidateState = '';
+
+        if (e.stopoverObject != null) {
+          candidateLat = e.stopoverObject!.latitude;
+          candidateLng = e.stopoverObject!.longitude;
+          candidateAddress = e.stopoverObject!.address;
+          candidateState = e.stopoverObject!.state;
+        } else {
+          final coords =
+              CarpoolDistanceCalculator.resolveCoordinates(candidateName);
+          candidateLat = coords.lat;
+          candidateLng = coords.lng;
+          final geo = CarpoolDistanceCalculator.findGeo(candidateName);
+          if (geo != null) {
+            candidateState = geo.state;
+            candidateAddress = '${geo.name}, ${geo.district}, ${geo.state}';
+          }
+        }
+
+        final adj = CarpoolDistanceCalculator.validateLocationOnRoute(
+          start: state.from,
+          destination: state.to,
+          candidateName: candidateName,
+          candidateLat: candidateLat != 0.0 ? candidateLat : null,
+          candidateLng: candidateLng != 0.0 ? candidateLng : null,
+          startLat: state.fromLat,
+          startLng: state.fromLng,
+          destLat: state.toLat,
+          destLng: state.toLng,
+          currentStopovers: state.selectedStopovers.toList(),
+          routePolyline: polyline,
+          corridorText: state.selectedRouteOption?.corridorText,
+          routeName: state.selectedRouteOption?.highwayName ??
+              state.selectedRouteOption?.title,
+          maxDistanceToRouteKm: 10.0,
+        );
+        if (!adj.isOnRoute) {
+          emit(
+            state.copyWith(
+              routesError:
+                  'This city is not on your selected route. Please select a city within 10 KM of your route.',
+            ),
+          );
+          return;
+        }
+
+        // Prevent duplicate stopovers
+        final isDuplicate = currentObjects.any((o) =>
+            o.city.trim().toLowerCase() == candidateName.toLowerCase() ||
+            (candidateLat != 0.0 &&
+                (o.latitude - candidateLat).abs() < 0.015 &&
+                (o.longitude - candidateLng).abs() < 0.015));
+
+        if (!isDuplicate) {
+          final newObj = e.stopoverObject ??
+              CarpoolStopoverEntity(
+                latitude: candidateLat,
+                longitude: candidateLng,
+                address: candidateAddress,
+                state: candidateState.isNotEmpty ? candidateState : 'India',
+                city: candidateName,
+              );
+          currentObjects.add(newObj);
+        }
+
+        // Reorder automatically in the route order
+        final orderedObjects = CarpoolDistanceCalculator.orderStopoverEntities(
+          start: state.from,
+          destination: state.to,
+          stopovers: currentObjects,
+          startLat: state.fromLat,
+          startLng: state.fromLng,
+          destLat: state.toLat,
+          destLng: state.toLng,
+          routePolyline: polyline,
+        );
+
+        final orderedNames = orderedObjects.map((o) => o.name).toList();
+        final finalSelected = Set<String>.from(orderedNames);
+
+        emit(
+          state.copyWith(
+            stopovers: orderedNames,
+            selectedStopovers: finalSelected,
+            stopoverObjects: orderedObjects,
+            clearRoutesError: true,
+          ),
+        );
       }
-      emit(state.copyWith(selectedStopovers: updated));
     });
+
     on<CarpoolOfferStopoverAdded>((e, emit) {
-      final trimmed = e.stopover.trim();
-      if (trimmed.isEmpty) return;
-      final updatedList = List<String>.from(state.stopovers);
-      if (!updatedList.contains(trimmed)) {
-        updatedList.add(trimmed);
+      final candidateName = e.stopover.trim();
+      if (candidateName.isEmpty) return;
+
+      List<({double lat, double lng})>? polyline;
+      if (state.selectedRouteOption != null &&
+          state.selectedRouteOption!.waypoints.isNotEmpty) {
+        polyline = state.selectedRouteOption!.waypoints
+            .map((w) => (lat: w.lat, lng: w.lng))
+            .toList();
       }
-      final orderedList = CarpoolDistanceCalculator.orderStopoversInCorridor(
+
+      double candidateLat = 0.0;
+      double candidateLng = 0.0;
+      String candidateAddress = candidateName;
+      String candidateState = '';
+
+      if (e.stopoverObject != null) {
+        candidateLat = e.stopoverObject!.latitude;
+        candidateLng = e.stopoverObject!.longitude;
+        candidateAddress = e.stopoverObject!.address;
+        candidateState = e.stopoverObject!.state;
+      } else {
+        final coords =
+            CarpoolDistanceCalculator.resolveCoordinates(candidateName);
+        candidateLat = coords.lat;
+        candidateLng = coords.lng;
+        final geo = CarpoolDistanceCalculator.findGeo(candidateName);
+        if (geo != null) {
+          candidateState = geo.state;
+          candidateAddress = '${geo.name}, ${geo.district}, ${geo.state}';
+        }
+      }
+
+      final adj = CarpoolDistanceCalculator.validateLocationOnRoute(
         start: state.from,
         destination: state.to,
-        stopovers: updatedList,
+        candidateName: candidateName,
+        candidateLat: candidateLat != 0.0 ? candidateLat : null,
+        candidateLng: candidateLng != 0.0 ? candidateLng : null,
         startLat: state.fromLat,
         startLng: state.fromLng,
         destLat: state.toLat,
         destLng: state.toLng,
+        currentStopovers: state.selectedStopovers.toList(),
+        routePolyline: polyline,
+        corridorText: state.selectedRouteOption?.corridorText,
+        routeName: state.selectedRouteOption?.highwayName ??
+            state.selectedRouteOption?.title,
+        maxDistanceToRouteKm: 10.0,
       );
+      if (!adj.isOnRoute) {
+        emit(
+          state.copyWith(
+            routesError:
+                'This city is not on your selected route. Please select a city within 10 KM of your route.',
+          ),
+        );
+        return;
+      }
+
+      final currentObjects =
+          List<CarpoolStopoverEntity>.from(state.stopoverObjects);
+
+      // Prevent duplicate stopovers
+      final isDuplicate = currentObjects.any((o) =>
+          o.city.trim().toLowerCase() == candidateName.toLowerCase() ||
+          (candidateLat != 0.0 &&
+              (o.latitude - candidateLat).abs() < 0.015 &&
+              (o.longitude - candidateLng).abs() < 0.015));
+
+      if (!isDuplicate) {
+        final newObj = e.stopoverObject ??
+            CarpoolStopoverEntity(
+              latitude: candidateLat,
+              longitude: candidateLng,
+              address: candidateAddress,
+              state: candidateState.isNotEmpty ? candidateState : 'India',
+              city: candidateName,
+            );
+        currentObjects.add(newObj);
+      }
+
+      // Reorder automatically in the route order
+      final orderedObjects = CarpoolDistanceCalculator.orderStopoverEntities(
+        start: state.from,
+        destination: state.to,
+        stopovers: currentObjects,
+        startLat: state.fromLat,
+        startLng: state.fromLng,
+        destLat: state.toLat,
+        destLng: state.toLng,
+        routePolyline: polyline,
+      );
+
+      final orderedNames = orderedObjects.map((o) => o.name).toList();
       final updatedSelected = Set<String>.from(state.selectedStopovers)
-        ..add(trimmed);
+        ..addAll(orderedNames);
+
       emit(
         state.copyWith(
-          stopovers: orderedList,
+          stopovers: orderedNames,
           selectedStopovers: updatedSelected,
+          stopoverObjects: orderedObjects,
+          clearRoutesError: true,
         ),
       );
     });
+
     on<CarpoolOfferStopoverRemoved>((e, emit) {
-      final updatedList = List<String>.from(state.stopovers)
-        ..remove(e.stopover);
+      final name = e.stopover.trim().toLowerCase();
+      final updatedObjects =
+          List<CarpoolStopoverEntity>.from(state.stopoverObjects)
+            ..removeWhere((o) =>
+                o.city.trim().toLowerCase() == name ||
+                o.name.trim().toLowerCase() == name);
+      final updatedList = updatedObjects.map((o) => o.name).toList();
       final updatedSelected = Set<String>.from(state.selectedStopovers)
-        ..remove(e.stopover);
+        ..removeWhere((s) => s.trim().toLowerCase() == name);
+
       emit(
         state.copyWith(
           stopovers: updatedList,
           selectedStopovers: updatedSelected,
+          stopoverObjects: updatedObjects,
+        ),
+      );
+    });
+
+    on<CarpoolOfferStopoverObjectsUpdated>((e, emit) {
+      List<({double lat, double lng})>? polyline;
+      if (state.selectedRouteOption != null &&
+          state.selectedRouteOption!.waypoints.isNotEmpty) {
+        polyline = state.selectedRouteOption!.waypoints
+            .map((w) => (lat: w.lat, lng: w.lng))
+            .toList();
+      }
+      final ordered = CarpoolDistanceCalculator.orderStopoverEntities(
+        start: state.from,
+        destination: state.to,
+        stopovers: e.stopovers,
+        startLat: state.fromLat,
+        startLng: state.fromLng,
+        destLat: state.toLat,
+        destLng: state.toLng,
+        routePolyline: polyline,
+      );
+      final names = ordered.map((o) => o.name).toList();
+      emit(
+        state.copyWith(
+          stopovers: names,
+          selectedStopovers: Set<String>.from(names),
+          stopoverObjects: ordered,
         ),
       );
     });
@@ -571,7 +854,8 @@ class CarpoolOfferRideBloc
     Emitter<CarpoolOfferRideState> emit,
   ) {
     final routes = event.routes;
-    final selected = event.selectedRoute ?? (routes.isNotEmpty ? routes.first : null);
+    final selected =
+        event.selectedRoute ?? (routes.isNotEmpty ? routes.first : null);
 
     List<CarpoolStopoverCityEntity> cities = const [];
     if (selected != null) {
@@ -579,7 +863,9 @@ class CarpoolOfferRideBloc
     }
 
     final tollFilter = selected != null
-        ? (selected.hasTolls ? CarpoolTollFilter.toll : CarpoolTollFilter.noToll)
+        ? (selected.hasTolls
+              ? CarpoolTollFilter.toll
+              : CarpoolTollFilter.noToll)
         : CarpoolTollFilter.all;
 
     emit(
@@ -595,48 +881,72 @@ class CarpoolOfferRideBloc
     );
   }
 
-  List<CarpoolStopoverCityEntity> _extractRouteCities(CarpoolRouteOptionEntity route) {
-    List<CarpoolStopoverCityEntity> cities = CarpoolDistanceCalculator.extractCitiesAlongPolyline(
-      originName: state.from,
-      destinationName: state.to,
-      polyline: route.waypoints.map((w) => (lat: w.lat, lng: w.lng)).toList(),
-      hasTolls: route.hasTolls,
-      totalDistanceKm: route.distanceKm,
-    );
+  List<CarpoolStopoverCityEntity> _extractRouteCities(
+    CarpoolRouteOptionEntity route,
+  ) {
+    List<CarpoolStopoverCityEntity> cities =
+        CarpoolDistanceCalculator.extractCitiesAlongPolyline(
+          originName: state.from,
+          destinationName: state.to,
+          polyline: route.waypoints
+              .map((w) => (lat: w.lat, lng: w.lng))
+              .toList(),
+          hasTolls: route.hasTolls,
+          totalDistanceKm: route.distanceKm,
+        );
 
     // Merge any intermediate towns from the route's corridorText
     if (route.corridorText.isNotEmpty) {
       final corridorTowns = route.corridorText
           .split(RegExp(r'\s*(?:→|->)\s*'))
           .map((s) => s.trim())
-          .where((s) =>
-              s.isNotEmpty &&
-              s.toLowerCase() != state.from.toLowerCase() &&
-              s.toLowerCase() != state.to.toLowerCase())
+          .where(
+            (s) =>
+                s.isNotEmpty &&
+                s.toLowerCase() != state.from.toLowerCase() &&
+                s.toLowerCase() != state.to.toLowerCase(),
+          )
           .toList();
 
-      final existingNamesLower = cities.map((c) => c.name.toLowerCase()).toSet();
+      final existingNamesLower = cities
+          .map((c) => c.name.toLowerCase())
+          .toSet();
       final additionalCities = <CarpoolStopoverCityEntity>[];
 
+      final polyline = route.waypoints
+          .map((w) => (lat: w.lat, lng: w.lng))
+          .toList();
       for (int i = 0; i < corridorTowns.length; i++) {
         final town = corridorTowns[i];
         if (!existingNamesLower.contains(town.toLowerCase())) {
           existingNamesLower.add(town.toLowerCase());
-          final approxDist = route.distanceKm > 0
-              ? ((i + 1) * route.distanceKm / (corridorTowns.length + 1)).round()
-              : 0;
           final coords = CarpoolDistanceCalculator.resolveCoordinates(town);
-          additionalCities.add(
-            CarpoolStopoverCityEntity(
-              name: town,
-              distanceKm: approxDist,
-              hasTolls: route.hasTolls,
-              isOnRoute: true,
-              detourKm: 0,
-              lat: coords.lat,
-              lng: coords.lng,
-            ),
-          );
+          double dToPoly = 9999.0;
+          if (coords.lat != null && coords.lng != null && polyline.isNotEmpty) {
+            dToPoly = CarpoolDistanceCalculator.distanceToPolyline(
+              coords.lat!,
+              coords.lng!,
+              polyline,
+            );
+          }
+          // Accept only if within 10 KM of the selected route
+          if (dToPoly <= 10.0) {
+            final approxDist = route.distanceKm > 0
+                ? ((i + 1) * route.distanceKm / (corridorTowns.length + 1))
+                      .round()
+                : 0;
+            additionalCities.add(
+              CarpoolStopoverCityEntity(
+                name: town,
+                distanceKm: approxDist,
+                hasTolls: route.hasTolls,
+                isOnRoute: true,
+                detourKm: 0,
+                lat: coords.lat ?? 0.0,
+                lng: coords.lng ?? 0.0,
+              ),
+            );
+          }
         }
       }
       if (additionalCities.isNotEmpty) {
@@ -694,7 +1004,8 @@ class CarpoolOfferRideBloc
             availableRoutes: const [],
             clearSelectedRoute: true,
             routeCities: const [],
-            routesError: 'No driving route found between ${state.from} and ${state.to}',
+            routesError:
+                'No driving route found between ${state.from} and ${state.to}',
           ),
         );
         return;
@@ -704,7 +1015,9 @@ class CarpoolOfferRideBloc
       final cities = CarpoolDistanceCalculator.extractCitiesAlongPolyline(
         originName: state.from,
         destinationName: state.to,
-        polyline: initialRoute.waypoints.map((w) => (lat: w.lat, lng: w.lng)).toList(),
+        polyline: initialRoute.waypoints
+            .map((w) => (lat: w.lat, lng: w.lng))
+            .toList(),
         hasTolls: initialRoute.hasTolls,
         totalDistanceKm: initialRoute.distanceKm,
       );
@@ -767,7 +1080,9 @@ class CarpoolOfferRideBloc
     final cities = CarpoolDistanceCalculator.extractCitiesAlongPolyline(
       originName: state.from,
       destinationName: state.to,
-      polyline: chosenRoute.waypoints.map((w) => (lat: w.lat, lng: w.lng)).toList(),
+      polyline: chosenRoute.waypoints
+          .map((w) => (lat: w.lat, lng: w.lng))
+          .toList(),
       hasTolls: chosenRoute.hasTolls,
       totalDistanceKm: chosenRoute.distanceKm,
     );
@@ -793,7 +1108,9 @@ class CarpoolOfferRideBloc
     emit(
       state.copyWith(
         selectedRouteOption: route,
-        tollFilter: route.hasTolls ? CarpoolTollFilter.toll : CarpoolTollFilter.noToll,
+        tollFilter: route.hasTolls
+            ? CarpoolTollFilter.toll
+            : CarpoolTollFilter.noToll,
         routeCities: cities,
         stopovers: cities.map((c) => c.name).toList(),
         clearRoutesError: true,
@@ -841,32 +1158,38 @@ class CarpoolOfferRideBloc
         ),
       );
 
-      final safeDistance = (result.distanceKm > 0 && result.distanceKm <= 3800)
-          ? result.distanceKm
-          : CarpoolDistanceCalculator.calculateDistanceKm(
-              state.from,
-              state.to,
-              fromLat: oLat,
-              fromLng: oLng,
-              toLat: dLat,
-              toLng: dLng,
-            ).toDouble();
-      final adjustedResult = safeDistance != result.distanceKm
-          ? CarpoolPricingEntity(
-              distanceKm: safeDistance,
-              effectiveDistanceKm: safeDistance,
-              durationMinutes: ((safeDistance / 58.0) * 60).round(),
-              provider: result.provider,
-              ratePerKm: result.ratePerKm,
-              suggestedPrice: (safeDistance * result.ratePerKm).round(),
-              allowedPriceRange: result.allowedPriceRange,
-              platformCharge: result.platformCharge,
-              riderBookingFee: result.riderBookingFee,
-              driverCommissionType: result.driverCommissionType,
-              driverCommissionValue: result.driverCommissionValue,
-              enableNegotiation: result.enableNegotiation,
-            )
-          : result;
+      // Strictly preserve distance and duration from user-selected route option
+      final double? explicitDist = event.selectedDistanceKm ??
+          CarpoolTemporaryRideData.instance.totalDistance ??
+          state.selectedRouteOption?.distanceKm.toDouble();
+
+      final safeDistance = (explicitDist != null && explicitDist > 0)
+          ? explicitDist
+          : ((result.distanceKm > 0 && result.distanceKm <= 3800)
+              ? result.distanceKm
+              : CarpoolDistanceCalculator.calculateDistanceKm(
+                  state.from,
+                  state.to,
+                  fromLat: oLat,
+                  fromLng: oLng,
+                  toLat: dLat,
+                  toLng: dLng,
+                ).toDouble());
+
+      final adjustedResult = CarpoolPricingEntity(
+        distanceKm: safeDistance,
+        effectiveDistanceKm: safeDistance,
+        durationMinutes: ((safeDistance / 58.0) * 60).round(),
+        provider: result.provider,
+        ratePerKm: result.ratePerKm,
+        suggestedPrice: (safeDistance * result.ratePerKm).round(),
+        allowedPriceRange: result.allowedPriceRange,
+        platformCharge: result.platformCharge,
+        riderBookingFee: result.riderBookingFee,
+        driverCommissionType: result.driverCommissionType,
+        driverCommissionValue: result.driverCommissionValue,
+        enableNegotiation: result.enableNegotiation,
+      );
 
       emit(
         state.copyWith(
@@ -1037,6 +1360,93 @@ class CarpoolOfferRideBloc
         if (state.vehicleNumber.trim().isNotEmpty) state.vehicleNumber.trim(),
       ].join(' • ');
 
+      final double totalDist = event.totalDistance ??
+          (state.selectedRouteOption != null
+              ? state.selectedRouteOption!.distanceKm.toDouble()
+              : CarpoolDistanceCalculator.calculateDistanceKm(
+                  state.from,
+                  state.to,
+                  fromLat: oLat,
+                  fromLng: oLng,
+                  toLat: dLat,
+                  toLng: dLng,
+                ).toDouble());
+
+      final bool effectiveHasToll = event.hasToll ??
+          (state.selectedRouteOption?.hasTolls ?? false);
+      final String effectiveTollType = event.tollType ??
+          (effectiveHasToll ? 'toll' : 'no_toll');
+      final String effectiveDuration = event.durationText ??
+          state.selectedRouteOption?.durationText ??
+          '1 hour 15 mins';
+
+      final Map<String, dynamic> effectiveTollRoute = event.tollRoute ?? {
+        'type': effectiveTollType,
+        'duration': effectiveDuration,
+        'distance': totalDist,
+      };
+
+      final temp = CarpoolTemporaryRideData.instance;
+      final List<CarpoolStopoverEntity> rawStops =
+          (event.stopovers != null && event.stopovers!.isNotEmpty)
+              ? event.stopovers!
+              : (temp.stopoverHalts.isNotEmpty
+                  ? temp.stopoverHalts
+                  : (state.stopoverObjects.isNotEmpty
+                      ? state.stopoverObjects
+                      : (state.selectedStopovers.isNotEmpty ||
+                              state.stopovers.isNotEmpty
+                          ? (state.selectedStopovers.isNotEmpty
+                                  ? state.selectedStopovers
+                                  : state.stopovers)
+                              .map((name) {
+                                final coords =
+                                    CarpoolDistanceCalculator.resolveCoordinates(
+                                  name,
+                                );
+                                final geo =
+                                    CarpoolDistanceCalculator.findGeo(name);
+                                return CarpoolStopoverEntity(
+                                  latitude: coords.lat,
+                                  longitude: coords.lng,
+                                  address: geo != null
+                                      ? '${geo.name}, ${geo.district}, ${geo.state}'
+                                      : name,
+                                  state: geo?.state ?? 'India',
+                                  city: name.split(',').first.trim(),
+                                );
+                              }).toList()
+                          : const <CarpoolStopoverEntity>[])));
+
+      final orderedStops = CarpoolDistanceCalculator.orderStopoverEntities(
+        start: state.from,
+        destination: state.to,
+        stopovers: rawStops,
+        startLat: oLat,
+        startLng: oLng,
+        destLat: dLat,
+        destLng: dLng,
+        routePolyline: state.selectedRouteOption?.waypoints
+            .map((w) => (lat: w.lat, lng: w.lng))
+            .toList(),
+      );
+
+      final List<Map<String, dynamic>> serializedStopovers =
+          orderedStops.asMap().entries.map((entry) {
+        final order = entry.key + 1;
+        final stop = entry.value;
+        return {
+          'order': order,
+          'city': stop.city.isNotEmpty
+              ? stop.city
+              : _extractCity(stop.address),
+          'address': stop.address.isNotEmpty ? stop.address : stop.city,
+          'state': stop.state.isNotEmpty ? stop.state : 'India',
+          'latitude': stop.latitude,
+          'longitude': stop.longitude,
+        };
+      }).toList();
+
       final ride = await _publishRide(
         CarpoolPublishRideParams(
           from: state.from,
@@ -1065,9 +1475,25 @@ class CarpoolOfferRideBloc
               ? state.vehicleNumber
               : 'DL 01 AB 1234',
           notes: 'Direct highway drive, air-conditioned.',
+          totalDistance: totalDist,
+          distanceKm: totalDist,
+          hasToll: effectiveHasToll,
+          tollType: effectiveTollType,
+          stopover: serializedStopovers,
+          tollRoute: effectiveTollRoute,
         ),
       );
-      emit(state.copyWith(status: CarpoolStatus.success, publishedRide: ride));
+      // Clear temporary saved data after running publish API
+      CarpoolTemporaryRideData.instance.clear();
+
+      emit(state.copyWith(
+        status: CarpoolStatus.success,
+        publishedRide: ride,
+        stopovers: const [],
+        selectedStopovers: const {},
+        stopoverObjects: const [],
+        clearSelectedRoute: true,
+      ));
     } catch (e) {
       emit(state.copyWith(status: CarpoolStatus.failure, error: '$e'));
     }

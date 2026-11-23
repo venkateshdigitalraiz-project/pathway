@@ -1,5 +1,7 @@
 import 'package:equatable/equatable.dart';
 
+import 'carpool_stopover_entity.dart';
+
 /// Entity representing a passenger booking on this published ride
 class MyPublishRidePassengerEntity extends Equatable {
   final String id;
@@ -110,6 +112,10 @@ class MyPublishRideDetailsEntity extends Equatable {
   final String status;
   final DateTime? createdAt;
   final List<MyPublishRidePassengerEntity> bookings;
+  final List<CarpoolStopoverEntity> stopovers;
+  final double? totalDistance;
+  final bool? hasToll;
+  final String? tollType;
 
   const MyPublishRideDetailsEntity({
     required this.id,
@@ -138,6 +144,10 @@ class MyPublishRideDetailsEntity extends Equatable {
     required this.status,
     this.createdAt,
     this.bookings = const [],
+    this.stopovers = const [],
+    this.totalDistance,
+    this.hasToll,
+    this.tollType,
   });
 
   /// Total potential earnings if all seats were booked
@@ -182,6 +192,10 @@ class MyPublishRideDetailsEntity extends Equatable {
     String? status,
     DateTime? createdAt,
     List<MyPublishRidePassengerEntity>? bookings,
+    List<CarpoolStopoverEntity>? stopovers,
+    double? totalDistance,
+    bool? hasToll,
+    String? tollType,
   }) {
     return MyPublishRideDetailsEntity(
       id: id ?? this.id,
@@ -210,6 +224,10 @@ class MyPublishRideDetailsEntity extends Equatable {
       status: status ?? this.status,
       createdAt: createdAt ?? this.createdAt,
       bookings: bookings ?? this.bookings,
+      stopovers: stopovers ?? this.stopovers,
+      totalDistance: totalDistance ?? this.totalDistance,
+      hasToll: hasToll ?? this.hasToll,
+      tollType: tollType ?? this.tollType,
     );
   }
 
@@ -241,5 +259,9 @@ class MyPublishRideDetailsEntity extends Equatable {
         status,
         createdAt,
         bookings,
+        stopovers,
+        totalDistance,
+        hasToll,
+        tollType,
       ];
 }

@@ -11,6 +11,8 @@ import '../../data/datasources/carpool_mock_data_source.dart';
 import '../../data/repositories/carpool_repository_impl.dart';
 import '../../domain/entities/carpool_place_entity.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
+import '../../domain/entities/carpool_stopover_entity.dart';
+import '../../domain/entities/carpool_temporary_ride_data.dart';
 import '../../domain/usecases/carpool_usecases.dart';
 import '../bloc/carpool_location_picker_bloc.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
@@ -25,20 +27,31 @@ import 'carpool_ride_published_page.dart';
 class CarpoolRideSummaryPage extends StatelessWidget {
   final CarpoolOfferRideBloc? bloc;
   final CarpoolPricingEntity? pricing;
+  final List<CarpoolStopoverEntity>? stopovers;
 
-  const CarpoolRideSummaryPage({super.key, this.bloc, this.pricing});
+  const CarpoolRideSummaryPage({
+    super.key,
+    this.bloc,
+    this.pricing,
+    this.stopovers,
+  });
 
   /// Navigates to [CarpoolRideSummaryPage] sharing the given [CarpoolOfferRideBloc].
   static Future<void> show(
     BuildContext context,
     CarpoolOfferRideBloc bloc, {
     CarpoolPricingEntity? pricing,
+    List<CarpoolStopoverEntity>? stopovers,
   }) {
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
         builder: (_) => BlocProvider.value(
           value: bloc,
-          child: CarpoolRideSummaryPage(bloc: bloc, pricing: pricing),
+          child: CarpoolRideSummaryPage(
+            bloc: bloc,
+            pricing: pricing,
+            stopovers: stopovers ?? bloc.state.stopoverObjects,
+          ),
         ),
       ),
     );
@@ -49,13 +62,19 @@ class CarpoolRideSummaryPage extends StatelessWidget {
     if (bloc != null) {
       return BlocProvider.value(
         value: bloc!,
-        child: _RideSummaryView(pricing: pricing),
+        child: _RideSummaryView(
+          pricing: pricing,
+          stopovers: stopovers ?? bloc!.state.stopoverObjects,
+        ),
       );
     }
 
     try {
-      context.read<CarpoolOfferRideBloc>();
-      return _RideSummaryView(pricing: pricing);
+      final b = context.read<CarpoolOfferRideBloc>();
+      return _RideSummaryView(
+        pricing: pricing,
+        stopovers: stopovers ?? b.state.stopoverObjects,
+      );
     } catch (_) {
       final remoteDataSource = CarpoolMockDataSource();
       final repository = CarpoolRepositoryImpl(remoteDataSource);
@@ -63,7 +82,7 @@ class CarpoolRideSummaryPage extends StatelessWidget {
         create: (_) => CarpoolOfferRideBloc(
           publishRide: CarpoolPublishRideUseCase(repository),
         ),
-        child: _RideSummaryView(pricing: pricing),
+        child: _RideSummaryView(pricing: pricing, stopovers: stopovers),
       );
     }
   }
@@ -71,7 +90,8 @@ class CarpoolRideSummaryPage extends StatelessWidget {
 
 class _RideSummaryView extends StatefulWidget {
   final CarpoolPricingEntity? pricing;
-  const _RideSummaryView({this.pricing});
+  final List<CarpoolStopoverEntity>? stopovers;
+  const _RideSummaryView({this.pricing, this.stopovers});
 
   @override
   State<_RideSummaryView> createState() => _RideSummaryViewState();
@@ -90,7 +110,9 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     double? fromLng,
     double? toLat,
     double? toLng,
+    bool hasSelectedRoute = false,
   }) {
+    if (hasSelectedRoute) return;
     if (_lastFrom == from && _lastTo == to) return;
     _lastFrom = from;
     _lastTo = to;
@@ -120,6 +142,9 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
       listenWhen: (p, c) => p.status != c.status,
       listener: (context, s) {
         if (s.status == CarpoolStatus.success && s.publishedRide != null) {
+          // Clear temporary ride publishing data after successful API run
+          CarpoolTemporaryRideData.instance.clear();
+
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Ride published successfully'),
@@ -143,6 +168,10 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
         }
       },
       builder: (context, s) {
+        final effectiveRoute =
+            CarpoolTemporaryRideData.instance.selectedRoute ??
+            s.selectedRouteOption;
+
         _fetchDistance(
           s.from,
           s.to,
@@ -150,6 +179,8 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
           fromLng: s.fromLng,
           toLat: s.toLat,
           toLng: s.toLng,
+          hasSelectedRoute: effectiveRoute != null ||
+              CarpoolTemporaryRideData.instance.totalDistance != null,
         );
 
         final bloc = context.read<CarpoolOfferRideBloc>();
@@ -158,43 +189,79 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
             ? screenHeight * 0.78
             : screenHeight * 0.44;
 
-        final activeStops = s.stopovers.isNotEmpty
-            ? s.stopovers
-                  .where((st) => s.selectedStopovers.contains(st))
-                  .toList()
-            : s.selectedStopovers.toList();
-        final orderedStops = CarpoolDistanceCalculator.orderStopoversInCorridor(
-          start: s.from,
-          destination: s.to,
-          stopovers: activeStops,
-          startLat: s.fromLat,
-          startLng: s.fromLng,
-          destLat: s.toLat,
-          destLng: s.toLng,
-        );
+        final List<CarpoolStopoverEntity> activeStopoverObjects =
+            (widget.stopovers != null && widget.stopovers!.isNotEmpty)
+            ? widget.stopovers!
+            : s.stopoverObjects;
+
+        final List<CarpoolStopoverEntity> resolvedStopoverObjects =
+            activeStopoverObjects.isNotEmpty
+            ? activeStopoverObjects
+            : (s.stopovers.isNotEmpty
+                      ? s.stopovers
+                      : s.selectedStopovers.toList())
+                  .map((name) {
+                    final coords = CarpoolDistanceCalculator.resolveCoordinates(
+                      name,
+                    );
+                    final geo = CarpoolDistanceCalculator.findGeo(name);
+                    return CarpoolStopoverEntity(
+                      latitude: coords.lat,
+                      longitude: coords.lng,
+                      address: geo != null
+                          ? '${geo.name}, ${geo.district}, ${geo.state}'
+                          : name,
+                      state: geo?.state ?? 'India',
+                      city: name,
+                    );
+                  })
+                  .toList();
+
+        final orderedStopoverObjects =
+            CarpoolDistanceCalculator.orderStopoverEntities(
+              start: s.from,
+              destination: s.to,
+              stopovers: resolvedStopoverObjects,
+              startLat: s.fromLat,
+              startLng: s.fromLng,
+              destLat: s.toLat,
+              destLng: s.toLng,
+              routePolyline: effectiveRoute?.waypoints
+                  .map((w) => (lat: w.lat, lng: w.lng))
+                  .toList(),
+            );
+
+        final orderedStops = orderedStopoverObjects.map((o) => o.name).toList();
+        if (orderedStopoverObjects.isNotEmpty) {
+          CarpoolTemporaryRideData.instance.saveStopoverHalts(orderedStopoverObjects);
+        }
 
         // Pricing logic using dynamic API calculation when available
         final pricing = s.pricingCalculation ?? widget.pricing;
         final double ratePerKm = pricing?.ratePerKm ?? 3.5;
 
-        // Total distance considers direct origin to destination location (no halt distance added)
-        final double distanceKmDouble =
-            ((_liveDistanceResult?.distanceKm != null &&
-                _liveDistanceResult!.distanceKm > 0 &&
-                _liveDistanceResult!.distanceKm <= 3800)
-            ? _liveDistanceResult!.distanceKm.toDouble()
-            : ((pricing?.distanceKm != null &&
-                      pricing!.distanceKm > 0 &&
-                      pricing.distanceKm <= 3800)
-                  ? pricing.distanceKm
-                  : CarpoolDistanceCalculator.calculateDistanceKm(
-                      s.from,
-                      s.to,
-                      fromLat: s.fromLat,
-                      fromLng: s.fromLng,
-                      toLat: s.toLat,
-                      toLng: s.toLng,
-                    ).toDouble()));
+        // Total distance strictly preserves WhereIsTheRoutePage user selection
+        final double distanceKmDouble = (CarpoolTemporaryRideData.instance.totalDistance != null &&
+                CarpoolTemporaryRideData.instance.totalDistance! > 0)
+            ? CarpoolTemporaryRideData.instance.totalDistance!
+            : ((effectiveRoute != null && effectiveRoute.distanceKm > 0)
+                ? effectiveRoute.distanceKm.toDouble()
+                : ((pricing?.distanceKm != null &&
+                          pricing!.distanceKm > 0 &&
+                          pricing.distanceKm <= 3800)
+                      ? pricing.distanceKm
+                      : ((_liveDistanceResult?.distanceKm != null &&
+                              _liveDistanceResult!.distanceKm > 0 &&
+                              _liveDistanceResult!.distanceKm <= 3800)
+                          ? _liveDistanceResult!.distanceKm.toDouble()
+                          : CarpoolDistanceCalculator.calculateDistanceKm(
+                              s.from,
+                              s.to,
+                              fromLat: s.fromLat,
+                              fromLng: s.fromLng,
+                              toLat: s.toLat,
+                              toLng: s.toLng,
+                            ).toDouble())));
 
         final int distanceKm = distanceKmDouble.round();
         final int suggestedPrice =
@@ -210,10 +277,17 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
         final int effectiveTotalPrice = effectivePricePerSeat * seats;
         final int totalPrice = effectiveTotalPrice;
         final int pricePerSeat = effectivePricePerSeat;
-        final String durationText =
-            _liveDistanceResult?.durationText ??
-            pricing?.formattedDuration ??
-            CarpoolDistanceCalculator.estimateDuration(distanceKm);
+
+        // Duration strictly preserves WhereIsTheRoutePage user selection
+        final String durationText = (CarpoolTemporaryRideData.instance.tollRoute?['duration'] != null &&
+                CarpoolTemporaryRideData.instance.tollRoute!['duration'].toString().trim().isNotEmpty)
+            ? CarpoolTemporaryRideData.instance.tollRoute!['duration'].toString().trim()
+            : ((effectiveRoute != null &&
+                    effectiveRoute.durationText.trim().isNotEmpty)
+                ? effectiveRoute.durationText.trim()
+                : (pricing?.formattedDuration ??
+                    _liveDistanceResult?.durationText ??
+                    CarpoolDistanceCalculator.estimateDuration(distanceKm)));
 
         return Scaffold(
           backgroundColor: const Color(0xFFF7F6FD),
@@ -236,7 +310,22 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                   fromLng: s.fromLng,
                   toLat: s.toLat,
                   toLng: s.toLng,
+                  routeWaypoints: (effectiveRoute != null &&
+                          effectiveRoute.waypoints.isNotEmpty)
+                      ? effectiveRoute.waypoints
+                          .map((w) => (lat: w.lat, lng: w.lng))
+                          .toList()
+                      : null,
                   stopovers: orderedStops,
+                  stopoverLocations: orderedStopoverObjects
+                      .map(
+                        (o) => (
+                          name: o.name,
+                          lat: o.latitude as double?,
+                          lng: o.longitude as double?,
+                        ),
+                      )
+                      .toList(),
                   distanceKm: distanceKm,
                   durationText: durationText,
                   isExpanded: _isMapFullscreen,
@@ -423,6 +512,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                               distanceKm,
                               durationText,
                               stopovers: orderedStops,
+                              stopoverObjects: orderedStopoverObjects,
                               departure: s.departure,
                               context: context,
                               bloc: bloc,
@@ -602,7 +692,83 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     }
 
     // All verifications passed -> Dispatch API publish
-    bloc.add(const CarpoolOfferPublishPressed());
+    final temp = CarpoolTemporaryRideData.instance;
+    final effectiveRoute =
+        temp.selectedRoute ?? s.selectedRouteOption;
+    List<CarpoolStopoverEntity> activeStopoverObjects = [];
+
+    if (temp.stopoverHalts.isNotEmpty) {
+      activeStopoverObjects = List.from(temp.stopoverHalts);
+    } else if (widget.stopovers != null && widget.stopovers!.isNotEmpty) {
+      activeStopoverObjects = List.from(widget.stopovers!);
+    } else if (s.stopoverObjects.isNotEmpty) {
+      activeStopoverObjects = List.from(s.stopoverObjects);
+    } else if (s.selectedStopovers.isNotEmpty || s.stopovers.isNotEmpty) {
+      final names = s.selectedStopovers.isNotEmpty
+          ? s.selectedStopovers.toList()
+          : s.stopovers;
+      activeStopoverObjects = names.map((name) {
+        final coords = CarpoolDistanceCalculator.resolveCoordinates(name);
+        final geo = CarpoolDistanceCalculator.findGeo(name);
+        return CarpoolStopoverEntity(
+          latitude: coords.lat,
+          longitude: coords.lng,
+          address: geo != null
+              ? '${geo.name}, ${geo.district}, ${geo.state}'
+              : name,
+          state: geo?.state ?? 'India',
+          city: name.split(',').first.trim(),
+        );
+      }).toList();
+    }
+
+    if (activeStopoverObjects.isNotEmpty) {
+      activeStopoverObjects = CarpoolDistanceCalculator.orderStopoverEntities(
+        start: s.from,
+        destination: s.to,
+        stopovers: activeStopoverObjects,
+        startLat: s.fromLat,
+        startLng: s.fromLng,
+        destLat: s.toLat,
+        destLng: s.toLng,
+        routePolyline: (effectiveRoute != null &&
+                effectiveRoute.waypoints.isNotEmpty)
+            ? effectiveRoute.waypoints
+                .map((w) => (lat: w.lat, lng: w.lng))
+                .toList()
+            : null,
+      );
+      temp.saveStopoverHalts(activeStopoverObjects);
+    }
+
+    final double? totalDist = temp.totalDistance ??
+        (_liveDistanceResult != null
+            ? _liveDistanceResult!.distanceKm.toDouble()
+            : (effectiveRoute != null
+                ? effectiveRoute.distanceKm.toDouble()
+                : null));
+
+    final String? duration = temp.tollRoute?['duration']?.toString() ??
+        _liveDistanceResult?.durationText ??
+        effectiveRoute?.durationText;
+
+    final bool hasToll = temp.hasToll ?? effectiveRoute?.hasTolls ?? false;
+    final String tollType = temp.tollType ?? (hasToll ? 'toll' : 'no_toll');
+
+    final Map<String, dynamic> tollRoute = temp.tollRoute ?? {
+      'type': tollType,
+      'duration': duration ?? '1 hour 15 mins',
+      'distance': totalDist ?? 0.0,
+    };
+
+    bloc.add(CarpoolOfferPublishPressed(
+      stopovers: activeStopoverObjects,
+      totalDistance: totalDist,
+      durationText: duration,
+      hasToll: hasToll,
+      tollType: tollType,
+      tollRoute: tollRoute,
+    ));
   }
 
   /// Estimates travel duration based on distance
@@ -731,6 +897,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     int distanceKm,
     String duration, {
     List<String> stopovers = const [],
+    List<CarpoolStopoverEntity> stopoverObjects = const [],
     required DateTime departure,
     BuildContext? context,
     CarpoolOfferRideBloc? bloc,
@@ -997,7 +1164,137 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
             ),
           ),
 
-          if (stopovers.isNotEmpty) ...[
+          if (stopoverObjects.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 11),
+              child: Container(
+                width: 2,
+                height: 10,
+                color: const Color(0xFF1A73E8),
+              ),
+            ),
+            for (final stop in stopoverObjects) ...[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    child: Container(
+                      width: 10,
+                      height: 10,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B),
+                          width: 2.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              stop.city,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF140D43),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Halt',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFFD97706),
+                                ),
+                              ),
+                            ),
+                            const Spacer(),
+                            InkWell(
+                              onTap: () {
+                                CarpoolTemporaryRideData.instance
+                                    .removeStopoverHalt(stop.city);
+                                if (bloc != null) {
+                                  bloc.add(
+                                    CarpoolOfferStopoverRemoved(stop.city),
+                                  );
+                                } else if (context != null) {
+                                  context.read<CarpoolOfferRideBloc>().add(
+                                    CarpoolOfferStopoverRemoved(stop.city),
+                                  );
+                                }
+                              },
+                              borderRadius: BorderRadius.circular(12),
+                              child: const Padding(
+                                padding: EdgeInsets.all(4),
+                                child: Icon(
+                                  Icons.close_rounded,
+                                  size: 15,
+                                  color: Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (stop.address.isNotEmpty &&
+                            stop.address != stop.city)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              () {
+                                var addr = stop.address
+                                    .replaceAll(RegExp(r',\s*,'), ',')
+                                    .replaceAll(RegExp(r'\s+'), ' ')
+                                    .trim();
+                                addr = addr.replaceAll(RegExp(r'^,\s*|,\s*$'), '');
+                                if (stop.state.isNotEmpty &&
+                                    !addr.toLowerCase().contains(stop.state.toLowerCase())) {
+                                  return '$addr • ${stop.state}';
+                                }
+                                return addr.isNotEmpty ? addr : stop.city;
+                              }(),
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: Color(0xFF64748B),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              Padding(
+                padding: const EdgeInsets.only(left: 11),
+                child: Container(
+                  width: 2,
+                  height: 10,
+                  color: const Color(0xFF1A73E8),
+                ),
+              ),
+            ],
+          ] else if (stopovers.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.only(left: 11),
               child: Container(
@@ -1044,26 +1341,26 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 1.5,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFFEF3C7),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'Halt',
-                                style: TextStyle(
-                                  fontSize: 9.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: Color(0xFFD97706),
-                                ),
-                              ),
-                            ),
+                            // Container(
+                            //   padding: const EdgeInsets.symmetric(
+                            //     horizontal: 6,
+                            //     vertical: 1.5,
+                            //   ),
+                            //   decoration: BoxDecoration(
+                            //     color: const Color(0xFFFEF3C7),
+                            //     borderRadius: BorderRadius.circular(4),
+                            //   ),
+                            //   child: const Text(
+                            //     'Halt',
+                            //     style: TextStyle(
+                            //       fontSize: 9.5,
+                            //       fontWeight: FontWeight.w700,
+                            //       color: Color(0xFFD97706),
+                            //     ),
+                            //   ),
+                            // ),
 
-                            const Spacer(),
+                            // const Spacer(),
                             InkWell(
                               onTap: () {
                                 context.read<CarpoolOfferRideBloc>().add(

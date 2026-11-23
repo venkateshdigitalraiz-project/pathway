@@ -20,6 +20,7 @@ class RealGoogleMapPreview extends StatefulWidget {
   final double? toLng;
   final List<String> stopovers;
   final List<({String name, double? lat, double? lng})>? stopoverLocations;
+  final List<({double lat, double lng})>? routeWaypoints;
   final int distanceKm;
   final String durationText;
   final bool isExpanded;
@@ -36,6 +37,7 @@ class RealGoogleMapPreview extends StatefulWidget {
     this.toLng,
     this.stopovers = const [],
     this.stopoverLocations,
+    this.routeWaypoints,
     required this.distanceKm,
     required this.durationText,
     this.isExpanded = false,
@@ -89,6 +91,7 @@ class _RealGoogleMapPreviewState extends State<RealGoogleMapPreview> {
         oldWidget.toLat != widget.toLat ||
         oldWidget.toLng != widget.toLng ||
         oldWidget.distanceKm != widget.distanceKm ||
+        oldWidget.routeWaypoints != widget.routeWaypoints ||
         stopsChanged) {
       _computeRouteData();
       if (_lastViewportSize != null) {
@@ -287,8 +290,10 @@ class _RealGoogleMapPreviewState extends State<RealGoogleMapPreview> {
     }
     _panOffset = Offset.zero;
 
-    // Generate continuous highway route through all halts
-    if (validPoints.length >= 2) {
+    // Generate route path through authentic waypoints or continuous interpolation
+    if (widget.routeWaypoints != null && widget.routeWaypoints!.length >= 2) {
+      _primaryWaypoints = List.from(widget.routeWaypoints!);
+    } else if (validPoints.length >= 2) {
       final allWaypoints = <({double lat, double lng})>[];
       for (int i = 0; i < validPoints.length - 1; i++) {
         final seg = _generateHighwayRoute(
@@ -398,6 +403,16 @@ class _RealGoogleMapPreviewState extends State<RealGoogleMapPreview> {
     if (size.width <= 0 || size.height <= 0) return;
 
     final validPoints = <({double lat, double lng})>[];
+    if (widget.routeWaypoints != null && widget.routeWaypoints!.isNotEmpty) {
+      final pts = widget.routeWaypoints!;
+      final step = max(1, pts.length ~/ 25);
+      for (int i = 0; i < pts.length; i += step) {
+        validPoints.add(pts[i]);
+      }
+      if (!validPoints.contains(pts.last)) {
+        validPoints.add(pts.last);
+      }
+    }
     if (_fromGeo.lat >= 6.5 &&
         _fromGeo.lat <= 38.0 &&
         _fromGeo.lng >= 68.0 &&
@@ -858,78 +873,218 @@ class _GoogleRoutePolylinePainter extends CustomPainter {
       routePath.lineTo(pt.dx, pt.dy);
     }
 
-    // Outer Dark Blue Casing
+    // Outer Cobalt Blue Casing (Matches WhereIsTheRoutePage exactly)
     canvas.drawPath(
       routePath,
       Paint()
-        ..color = const Color(0xFF1558D6)
+        ..color = const Color(0xFF004ECC)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 7.5
+        ..strokeWidth = 8.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // Inner Bright Google Blue Core
+    // Inner Vibrant BlaBlaCar Royal Blue Core (Matches WhereIsTheRoutePage exactly)
     canvas.drawPath(
       routePath,
       Paint()
-        ..color = const Color(0xFF4285F4)
+        ..color = const Color(0xFF0066FF)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 5.0
+        ..strokeWidth = 5.5
         ..strokeCap = StrokeCap.round
         ..strokeJoin = StrokeJoin.round,
     );
 
-    // 2. Halt / Stopover Pins with Lat & Lng
-    for (int i = 0; i < haltGeos.length; i++) {
-      final halt = haltGeos[i];
-      final isHaltValid =
-          halt.lat >= 6.5 &&
-          halt.lat <= 38.0 &&
-          halt.lng >= 68.0 &&
-          halt.lng <= 98.0;
-      if (isHaltValid) {
-        final haltPos = projector(halt.lat, halt.lng);
-        _drawHaltPin(
-          canvas: canvas,
-          position: haltPos,
-          label: halt.name,
-          lat: halt.lat,
-          lng: halt.lng,
-          index: i + 1,
-        );
-      }
-    }
+    // Track occupied bounding boxes to completely eliminate overlap across markers & pills
+    final occupiedRects = <Rect>[];
 
-    // 3. Pick-up (Origin) Google Azure Marker
-    final isFromValid =
-        fromGeo.lat >= 6.5 &&
+    // 2. Pre-calculate Pick-up (Origin) Google Azure Marker Pill & Area
+    final isFromValid = fromGeo.lat >= 6.5 &&
         fromGeo.lat <= 38.0 &&
         fromGeo.lng >= 68.0 &&
         fromGeo.lng <= 98.0;
+    Offset? originPos;
+    Rect? fromPillRect;
+    TextPainter? fromTp;
     if (isFromValid) {
-      final originPos = projector(fromGeo.lat, fromGeo.lng);
+      originPos = projector(fromGeo.lat, fromGeo.lng);
+      final cleanFrom = fromGeo.name.split(',').first.trim();
+      fromTp = TextPainter(
+        text: TextSpan(
+          text: cleanFrom,
+          style: const TextStyle(
+            color: Color(0xFF140D43),
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      fromPillRect = Rect.fromCenter(
+        center: Offset(originPos.dx, originPos.dy + 22),
+        width: fromTp.width + 16,
+        height: fromTp.height + 8,
+      );
+      occupiedRects.add(fromPillRect);
+      occupiedRects.add(Rect.fromCircle(center: originPos, radius: 12));
+    }
+
+    // 3. Pre-calculate Drop-off (Destination) Google Red Teardrop Marker Pill & Area
+    final isToValid = toGeo.lat >= 6.5 &&
+        toGeo.lat <= 38.0 &&
+        toGeo.lng >= 68.0 &&
+        toGeo.lng <= 98.0;
+    Offset? destPos;
+    Rect? toPillRect;
+    TextPainter? toTp;
+    if (isToValid) {
+      destPos = projector(toGeo.lat, toGeo.lng);
+      final cleanTo = toGeo.name.split(',').first.trim();
+      toTp = TextPainter(
+        text: TextSpan(
+          text: cleanTo,
+          style: const TextStyle(
+            color: Color(0xFF140D43),
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      toPillRect = Rect.fromCenter(
+        center: Offset(destPos.dx, destPos.dy - 36),
+        width: toTp.width + 16,
+        height: toTp.height + 8,
+      );
+      occupiedRects.add(toPillRect);
+      occupiedRects.add(Rect.fromCircle(center: destPos, radius: 14));
+    }
+
+    // 4. Halt / Stopover Pins: Alternating Above / Below with Dynamic Anti-Collision
+    bool collides(Rect r) =>
+        occupiedRects.any((occ) => occ.inflate(4.0).overlaps(r));
+
+    for (int i = 0; i < haltGeos.length; i++) {
+      final halt = haltGeos[i];
+      final isHaltValid = halt.lat >= 6.5 &&
+          halt.lat <= 38.0 &&
+          halt.lng >= 68.0 &&
+          halt.lng <= 98.0;
+      if (!isHaltValid) continue;
+
+      final haltPos = projector(halt.lat, halt.lng);
+      final cleanLabel = halt.name.split(',').first.trim();
+
+      // Clean single-line title (Strictly NO coordinates text)
+      final titleSpan = TextSpan(
+        text: 'Halt: $cleanLabel',
+        style: const TextStyle(
+          color: Color(0xFF140D43),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.1,
+        ),
+      );
+
+      final textPainter = TextPainter(
+        text: titleSpan,
+        textAlign: TextAlign.center,
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final pillWidth = textPainter.width + 14;
+      final pillHeight = textPainter.height + 6;
+
+      // Requirement 2: Display halt markers alternately
+      // 1st halt (i=0) -> Above
+      // 2nd halt (i=1) -> Below
+      // 3rd halt (i=2) -> Above
+      // 4th halt (i=3) -> Below
+      bool isAbove = (i % 2 == 0);
+
+      double targetY = isAbove ? (haltPos.dy - 34) : (haltPos.dy + 34);
+      double targetX = haltPos.dx;
+      Rect candidateRect = Rect.fromCenter(
+        center: Offset(targetX, targetY),
+        width: pillWidth,
+        height: pillHeight,
+      );
+
+      // Requirement 4: Prevent halt labels from overlapping each other, pickup, and drop-off markers
+      if (collides(candidateRect)) {
+        // Test alternate side
+        final altAbove = !isAbove;
+        final altY = altAbove ? (haltPos.dy - 34) : (haltPos.dy + 34);
+        final altRect = Rect.fromCenter(
+          center: Offset(targetX, altY),
+          width: pillWidth,
+          height: pillHeight,
+        );
+        if (!collides(altRect)) {
+          isAbove = altAbove;
+          targetY = altY;
+          candidateRect = altRect;
+        } else {
+          // Both standard sides collide: try slight vertical elevation
+          final elevY = isAbove ? (haltPos.dy - 44) : (haltPos.dy + 44);
+          final elevRect = Rect.fromCenter(
+            center: Offset(targetX, elevY),
+            width: pillWidth,
+            height: pillHeight,
+          );
+          if (!collides(elevRect)) {
+            targetY = elevY;
+            candidateRect = elevRect;
+          } else {
+            // Nudge horizontally away from destination or adjacent markers
+            final shiftX = (destPos != null && haltPos.dx > destPos.dx - 65)
+                ? (haltPos.dx - 22)
+                : (haltPos.dx + 20);
+            final shiftedRect = Rect.fromCenter(
+              center: Offset(shiftX, targetY),
+              width: pillWidth,
+              height: pillHeight,
+            );
+            if (!collides(shiftedRect)) {
+              targetX = shiftX;
+              candidateRect = shiftedRect;
+            }
+          }
+        }
+      }
+
+      occupiedRects.add(candidateRect);
+      occupiedRects.add(Rect.fromCircle(center: haltPos, radius: 10));
+
+      _drawHaltPin(
+        canvas: canvas,
+        position: haltPos,
+        pillRect: candidateRect,
+        textPainter: textPainter,
+        isAbove: isAbove,
+        index: i + 1,
+      );
+    }
+
+    // 5. Render Pick-up (Origin) Google Azure Marker
+    if (isFromValid && originPos != null && fromPillRect != null && fromTp != null) {
       _drawPin(
         canvas: canvas,
         position: originPos,
-        label: fromGeo.name,
+        pillRect: fromPillRect,
+        textPainter: fromTp,
         primaryColor: const Color(0xFF1976D2),
         isTeardrop: false,
       );
     }
 
-    // 4. Drop-off (Destination) Google Red Teardrop Marker
-    final isToValid =
-        toGeo.lat >= 6.5 &&
-        toGeo.lat <= 38.0 &&
-        toGeo.lng >= 68.0 &&
-        toGeo.lng <= 98.0;
-    if (isToValid) {
-      final destPos = projector(toGeo.lat, toGeo.lng);
+    // 6. Render Drop-off (Destination) Google Red Teardrop Marker
+    if (isToValid && destPos != null && toPillRect != null && toTp != null) {
       _drawPin(
         canvas: canvas,
         position: destPos,
-        label: toGeo.name,
+        pillRect: toPillRect,
+        textPainter: toTp,
         primaryColor: const Color(0xFFD93025),
         isTeardrop: true,
       );
@@ -939,42 +1094,66 @@ class _GoogleRoutePolylinePainter extends CustomPainter {
   void _drawHaltPin({
     required Canvas canvas,
     required Offset position,
-    required String label,
-    required double lat,
-    required double lng,
+    required Rect pillRect,
+    required TextPainter textPainter,
+    required bool isAbove,
     required int index,
   }) {
-    // Drop shadow
+    // Drop shadow under pin tip on the route
     canvas.drawCircle(
-      Offset(position.dx, position.dy + 3),
-      8,
+      Offset(position.dx, position.dy + (isAbove ? 2 : -2)),
+      6,
       Paint()
-        ..color = Colors.black.withOpacity(0.30)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        ..color = Colors.black.withOpacity(0.22)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
     );
 
     // Amber / Orange Halt Teardrop Marker
     const haltColor = Color(0xFFF59E0B);
     const haltBorder = Color(0xFFD97706);
 
-    final pinPath = Path()
-      ..moveTo(position.dx, position.dy)
-      ..quadraticBezierTo(
-        position.dx - 10,
-        position.dy - 12,
-        position.dx - 8,
-        position.dy - 20,
-      )
-      ..arcToPoint(
-        Offset(position.dx + 8, position.dy - 20),
-        radius: const Radius.circular(8),
-      )
-      ..quadraticBezierTo(
-        position.dx + 10,
-        position.dy - 12,
+    // Dynamic Teardrop Pin oriented towards the route
+    final pinPath = Path();
+    if (isAbove) {
+      // Pin points DOWN to position on route
+      pinPath.moveTo(position.dx, position.dy);
+      pinPath.quadraticBezierTo(
+        position.dx - 9,
+        position.dy - 10,
+        position.dx - 7,
+        position.dy - 18,
+      );
+      pinPath.arcToPoint(
+        Offset(position.dx + 7, position.dy - 18),
+        radius: const Radius.circular(7),
+      );
+      pinPath.quadraticBezierTo(
+        position.dx + 9,
+        position.dy - 10,
         position.dx,
         position.dy,
       );
+    } else {
+      // Pin points UP to position on route
+      pinPath.moveTo(position.dx, position.dy);
+      pinPath.quadraticBezierTo(
+        position.dx - 9,
+        position.dy + 10,
+        position.dx - 7,
+        position.dy + 18,
+      );
+      pinPath.arcToPoint(
+        Offset(position.dx + 7, position.dy + 18),
+        radius: const Radius.circular(7),
+        clockwise: false,
+      );
+      pinPath.quadraticBezierTo(
+        position.dx + 9,
+        position.dy + 10,
+        position.dx,
+        position.dy,
+      );
+    }
 
     canvas.drawPath(pinPath, Paint()..color = haltColor);
     canvas.drawPath(
@@ -987,68 +1166,64 @@ class _GoogleRoutePolylinePainter extends CustomPainter {
 
     // Inner White Circle with Halt Badge
     canvas.drawCircle(
-      Offset(position.dx, position.dy - 20),
-      4.0,
+      Offset(position.dx, isAbove ? position.dy - 18 : position.dy + 18),
+      3.5,
       Paint()..color = Colors.white,
     );
 
-    // Halt Label Pill displaying: "Halt: <label>" & "<lat>°N, <lng>°E"
-    final coordText =
-        '${lat.toStringAsFixed(3)}°N, ${lng.toStringAsFixed(3)}°E';
-    final titleSpan = TextSpan(
-      children: [
-        TextSpan(
-          text: 'Halt: $label\n',
-          style: const TextStyle(
-            color: Color(0xFF140D43),
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        TextSpan(
-          text: coordText,
-          style: const TextStyle(
-            color: Color(0xFFD97706),
-            fontSize: 9.5,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      ],
-    );
+    // Optional leader line if pill is slightly elevated or shifted
+    final pinHeadY = isAbove ? position.dy - 20 : position.dy + 20;
+    if ((pillRect.center.dy - position.dy).abs() > 36 ||
+        (pillRect.center.dx - position.dx).abs() > 4) {
+      final leaderPath = Path()
+        ..moveTo(position.dx, pinHeadY)
+        ..lineTo(
+          pillRect.center.dx,
+          isAbove ? pillRect.bottom : pillRect.top,
+        );
+      canvas.drawPath(
+        leaderPath,
+        Paint()
+          ..color = const Color(0xFFF59E0B)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0,
+      );
+    }
 
-    final textPainter = TextPainter(
-      text: titleSpan,
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    final pillWidth = textPainter.width + 16;
-    final pillHeight = textPainter.height + 8;
-    final pillRect = Rect.fromCenter(
-      center: Offset(position.dx, position.dy - 46),
-      width: pillWidth,
-      height: pillHeight,
-    );
-
+    // Halt Label Pill (Clean white card with subtle amber border, NO red box, NO coordinates)
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pillRect, const Radius.circular(8)),
+      RRect.fromRectAndRadius(pillRect.shift(const Offset(0, 1.5)), const Radius.circular(6)),
+      Paint()
+        ..color = Colors.black.withOpacity(0.12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(pillRect, const Radius.circular(6)),
       Paint()..color = Colors.white,
     );
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pillRect, const Radius.circular(8)),
+      RRect.fromRectAndRadius(pillRect, const Radius.circular(6)),
       Paint()
         ..color = const Color(0xFFF59E0B)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2,
+        ..strokeWidth = 1.0,
     );
 
-    textPainter.paint(canvas, Offset(pillRect.left + 8, pillRect.top + 4));
+    // Paint text cleanly centered in pill
+    textPainter.paint(
+      canvas,
+      Offset(
+        pillRect.left + (pillRect.width - textPainter.width) / 2,
+        pillRect.top + (pillRect.height - textPainter.height) / 2,
+      ),
+    );
   }
 
   void _drawPin({
     required Canvas canvas,
     required Offset position,
-    required String label,
+    required Rect pillRect,
+    required TextPainter textPainter,
     required Color primaryColor,
     required bool isTeardrop,
   }) {
@@ -1094,44 +1269,37 @@ class _GoogleRoutePolylinePainter extends CustomPainter {
       canvas.drawCircle(position, 4, Paint()..color = Colors.white);
     }
 
-    // Location Text Pill
-    final textSpan = TextSpan(
-      text: label,
-      style: const TextStyle(
-        color: Color(0xFF140D43),
-        fontSize: 11,
-        fontWeight: FontWeight.w800,
-      ),
-    );
-    final textPainter = TextPainter(
-      text: textSpan,
-      textDirection: TextDirection.ltr,
-    )..layout();
-
-    final pillWidth = textPainter.width + 16;
-    final pillHeight = textPainter.height + 8;
-    final pillRect = Rect.fromCenter(
-      center: Offset(
-        position.dx,
-        isTeardrop ? position.dy - 36 : position.dy + 22,
-      ),
-      width: pillWidth,
-      height: pillHeight,
-    );
-
+    // Shadow
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pillRect, const Radius.circular(8)),
+      RRect.fromRectAndRadius(pillRect.shift(const Offset(0, 1.5)), const Radius.circular(6)),
+      Paint()
+        ..color = Colors.black.withOpacity(0.12)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+
+    // Pill background
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(pillRect, const Radius.circular(6)),
       Paint()..color = Colors.white,
     );
+
+    // Pill border
     canvas.drawRRect(
-      RRect.fromRectAndRadius(pillRect, const Radius.circular(8)),
+      RRect.fromRectAndRadius(pillRect, const Radius.circular(6)),
       Paint()
-        ..color = primaryColor.withOpacity(0.40)
+        ..color = primaryColor.withOpacity(0.50)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 1.0,
     );
 
-    textPainter.paint(canvas, Offset(pillRect.left + 8, pillRect.top + 4));
+    // Centered text
+    textPainter.paint(
+      canvas,
+      Offset(
+        pillRect.left + (pillRect.width - textPainter.width) / 2,
+        pillRect.top + (pillRect.height - textPainter.height) / 2,
+      ),
+    );
   }
 
   @override

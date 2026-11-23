@@ -1,3 +1,4 @@
+import '../../domain/entities/carpool_stopover_entity.dart';
 import '../../domain/entities/my_publish_ride_details_entity.dart';
 
 String _cleanAddress(dynamic val) {
@@ -132,6 +133,10 @@ class MyPublishRideDetailsModel extends MyPublishRideDetailsEntity {
     required super.status,
     super.createdAt,
     super.bookings,
+    super.stopovers,
+    super.totalDistance,
+    super.hasToll,
+    super.tollType,
   });
 
   factory MyPublishRideDetailsModel.fromJson(Map<String, dynamic> raw) {
@@ -282,6 +287,47 @@ class MyPublishRideDetailsModel extends MyPublishRideDetailsEntity {
       }
     }
 
+    // Stopovers parsing:
+    // API returns "stopover": [ { "order": 1, "city": "Choutuppal", ... } ] or "stops"
+    final List<CarpoolStopoverEntity> stopovers = [];
+    final rawStopovers =
+        json['stopover'] ?? json['stops'] ?? json['stopovers'];
+    if (rawStopovers is List) {
+      for (int i = 0; i < rawStopovers.length; i++) {
+        final item = rawStopovers[i];
+        if (item is Map<String, dynamic>) {
+          stopovers.add(CarpoolStopoverEntity.fromJson({
+            ...item,
+            if (!item.containsKey('order') && !item.containsKey('stopOrder'))
+              'order': i + 1,
+          }));
+        } else if (item is Map) {
+          final m = item.map((k, v) => MapEntry(k.toString(), v));
+          stopovers.add(CarpoolStopoverEntity.fromJson({
+            ...m,
+            if (!m.containsKey('order') && !m.containsKey('stopOrder'))
+              'order': i + 1,
+          }));
+        }
+      }
+    }
+    stopovers.sort((a, b) => a.order.compareTo(b.order));
+
+    final totalDist = (json['totalDistance'] as num?)?.toDouble() ??
+        (json['distanceKm'] as num?)?.toDouble() ??
+        (json['toll_route'] is Map
+            ? (json['toll_route']['distance'] as num?)?.toDouble()
+            : null);
+
+    final hasToll = json['hasToll'] is bool
+        ? json['hasToll'] as bool
+        : (json['toll_type']?.toString().toLowerCase() == 'toll');
+
+    final tollType = json['toll_type']?.toString() ??
+        (json['toll_route'] is Map
+            ? json['toll_route']['type']?.toString()
+            : null);
+
     return MyPublishRideDetailsModel(
       id: json['id']?.toString() ?? json['_id']?.toString() ?? '',
       rideCode: json['rideCode']?.toString() ?? 'CR-${json['id']?.toString().substring(0, 4) ?? "0000"}',
@@ -309,6 +355,10 @@ class MyPublishRideDetailsModel extends MyPublishRideDetailsEntity {
       status: json['status']?.toString() ?? 'active',
       createdAt: createdAt,
       bookings: bookings,
+      stopovers: stopovers,
+      totalDistance: totalDist,
+      hasToll: hasToll,
+      tollType: tollType,
     );
   }
 }

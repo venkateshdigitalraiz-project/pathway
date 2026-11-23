@@ -77,6 +77,12 @@ class CarpoolRideEntity extends Equatable {
     this.rideCode,
     this.driverPhone,
     this.notes,
+    this.durationText,
+    this.totalDistance,
+    this.hasToll,
+    this.tollType,
+    this.tollRoute,
+    this.stopovers,
   });
 
   final String id;
@@ -100,6 +106,12 @@ class CarpoolRideEntity extends Equatable {
   final String? rideCode;
   final String? driverPhone;
   final String? notes;
+  final String? durationText;
+  final double? totalDistance;
+  final bool? hasToll;
+  final String? tollType;
+  final Map<String, dynamic>? tollRoute;
+  final List<Map<String, dynamic>>? stopovers;
 
   String get displayFromCity =>
       (originCity != null && originCity!.isNotEmpty) ? originCity! : from;
@@ -109,15 +121,59 @@ class CarpoolRideEntity extends Equatable {
       ? destinationCity!
       : to;
 
+  /// Formatted duration / estimated journey time from toll_route or durationText
+  String get estimatedDuration {
+    if (durationText != null && durationText!.trim().isNotEmpty) {
+      return durationText!.trim();
+    }
+    if (tollRoute != null && tollRoute!['duration'] != null) {
+      final d = tollRoute!['duration'].toString().trim();
+      if (d.isNotEmpty) return d;
+    }
+    if (distanceKm > 0) {
+      final hours = distanceKm ~/ 60;
+      final mins = ((distanceKm % 60) * 60 / 60).round();
+      if (hours > 0 && mins > 0) return '$hours hr $mins min';
+      if (hours > 0) return '$hours hr';
+      return '$mins min';
+    }
+    return '';
+  }
+
+  /// Formatted distance from toll_route, totalDistance, or distanceKm
+  String get displayDistance {
+    if (tollRoute != null && tollRoute!['distance'] != null) {
+      final d = (tollRoute!['distance'] as num?)?.toDouble();
+      if (d != null && d > 0) {
+        return '${d.toStringAsFixed(d.truncateToDouble() == d ? 0 : 1)} km';
+      }
+    }
+    if (totalDistance != null && totalDistance! > 0) {
+      return '${totalDistance!.toStringAsFixed(totalDistance!.truncateToDouble() == totalDistance ? 0 : 1)} km';
+    }
+    if (distanceKm > 0) {
+      return '$distanceKm km';
+    }
+    return '';
+  }
+
   CarpoolRideEntity copyWith({
     CarpoolRideStatus? status,
     int? seats,
     int? totalBookings,
+    String? vehicleModel,
+    String? vehicleNumber,
     String? originCity,
     String? destinationCity,
     String? rideCode,
     String? driverPhone,
     String? notes,
+    String? durationText,
+    double? totalDistance,
+    bool? hasToll,
+    String? tollType,
+    Map<String, dynamic>? tollRoute,
+    List<Map<String, dynamic>>? stopovers,
   }) {
     return CarpoolRideEntity(
       id: id,
@@ -134,13 +190,19 @@ class CarpoolRideEntity extends Equatable {
       status: status ?? this.status,
       rideType: rideType,
       totalBookings: totalBookings ?? this.totalBookings,
-      vehicleModel: vehicleModel,
-      vehicleNumber: vehicleNumber,
+      vehicleModel: vehicleModel ?? this.vehicleModel,
+      vehicleNumber: vehicleNumber ?? this.vehicleNumber,
       originCity: originCity ?? this.originCity,
       destinationCity: destinationCity ?? this.destinationCity,
       rideCode: rideCode ?? this.rideCode,
       driverPhone: driverPhone ?? this.driverPhone,
       notes: notes ?? this.notes,
+      durationText: durationText ?? this.durationText,
+      totalDistance: totalDistance ?? this.totalDistance,
+      hasToll: hasToll ?? this.hasToll,
+      tollType: tollType ?? this.tollType,
+      tollRoute: tollRoute ?? this.tollRoute,
+      stopovers: stopovers ?? this.stopovers,
     );
   }
 
@@ -167,6 +229,12 @@ class CarpoolRideEntity extends Equatable {
     rideCode,
     driverPhone,
     notes,
+    durationText,
+    totalDistance,
+    hasToll,
+    tollType,
+    tollRoute,
+    stopovers,
   ];
 }
 
@@ -192,6 +260,12 @@ class CarpoolPublishRideParams extends Equatable {
     this.vehicleModel,
     this.vehicleNumber,
     this.notes,
+    this.totalDistance,
+    this.distanceKm,
+    this.hasToll,
+    this.tollType,
+    this.stopover,
+    this.tollRoute,
   });
 
   final String from;
@@ -215,6 +289,12 @@ class CarpoolPublishRideParams extends Equatable {
   final String? vehicleModel;
   final String? vehicleNumber;
   final String? notes;
+  final double? totalDistance;
+  final double? distanceKm;
+  final bool? hasToll;
+  final String? tollType;
+  final List<Map<String, dynamic>>? stopover;
+  final Map<String, dynamic>? tollRoute;
 
   Map<String, dynamic> toJson() {
     final resolvedOrigin = origin ?? from;
@@ -256,6 +336,28 @@ class CarpoolPublishRideParams extends Equatable {
     }
     final formattedUtcDepartureTime = CarpoolFormatters.toUtcIso(dtToFormat);
 
+    final resolvedDist = totalDistance ??
+        distanceKm ??
+        CarpoolDistanceCalculator.calculateDistanceKm(
+          resolvedOrigin,
+          resolvedDest,
+          fromLat: resolvedOriginLat,
+          fromLng: resolvedOriginLng,
+          toLat: resolvedDestLat,
+          toLng: resolvedDestLng,
+        ).toDouble();
+
+    final effectiveHasToll = hasToll ?? false;
+    final effectiveTollType =
+        tollType ?? (effectiveHasToll ? 'toll' : 'no_toll');
+
+    final effectiveTollRoute = tollRoute ??
+        {
+          'type': effectiveTollType,
+          'duration': '1 hour 15 mins',
+          'distance': resolvedDist,
+        };
+
     return {
       'origin': resolvedOrigin,
       'originLat': resolvedOriginLat,
@@ -276,6 +378,12 @@ class CarpoolPublishRideParams extends Equatable {
           ? vehicleNumber!.trim()
           : 'DL 01 AB 1234',
       'notes': notes ?? 'Direct highway drive, air-conditioned.',
+      'totalDistance': resolvedDist,
+      'distanceKm': resolvedDist,
+      'hasToll': effectiveHasToll,
+      'toll_type': effectiveTollType,
+      'stopover': stopover ?? const <Map<String, dynamic>>[],
+      'toll_route': effectiveTollRoute,
     };
   }
 
@@ -301,6 +409,12 @@ class CarpoolPublishRideParams extends Equatable {
     vehicleModel,
     vehicleNumber,
     notes,
+    totalDistance,
+    distanceKm,
+    hasToll,
+    tollType,
+    stopover,
+    tollRoute,
   ];
 }
 

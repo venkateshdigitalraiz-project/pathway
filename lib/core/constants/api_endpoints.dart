@@ -31,6 +31,8 @@ class ApiEndpoints {
   static const String myBookings = '$baseUrl/api/carpool/my-bookings';
   static const String rides = '$baseUrl/api/carpool/rides';
   static const String searchRides = '$baseUrl/api/carpool/rides/search';
+  static String searchRideDetails(String id) =>
+      '$baseUrl/api/carpool/rides/search/$id';
   static String rideDetails(String id) => '$baseUrl/api/carpool/rides/$id';
   static String bookRide(String id) => '$baseUrl/api/carpool/rides/$id/book';
   static String acceptBooking(String id) =>

@@ -117,8 +117,29 @@ class CarpoolRoutesRemoteDataSourceImpl implements CarpoolRoutesRemoteDataSource
             isPrimary: i == 0,
           );
 
+          // Decode complete driving route polyline from all steps across all legs
+          final List<RouteCoordinate> fullDecoded = [];
+          for (final leg in legs) {
+            final legMap = leg as Map<String, dynamic>?;
+            final legSteps = legMap?['steps'] as List<dynamic>?;
+            if (legSteps != null) {
+              for (final st in legSteps) {
+                final stMap = st as Map<String, dynamic>?;
+                final stPoly = stMap?['polyline']?['points']?.toString();
+                if (stPoly != null && stPoly.isNotEmpty) {
+                  final pts = _decodePolyline(stPoly);
+                  if (fullDecoded.isEmpty) {
+                    fullDecoded.addAll(pts);
+                  } else {
+                    fullDecoded.addAll(pts.skip(1));
+                  }
+                }
+              }
+            }
+          }
+
           final encodedPoints = r['overview_polyline']?['points']?.toString() ?? '';
-          final decoded = _decodePolyline(encodedPoints);
+          final decoded = fullDecoded.isNotEmpty ? fullDecoded : _decodePolyline(encodedPoints);
 
           // Dynamically check for toll warnings, toll roads, or highway toll classification
           final warnings = (r['warnings'] as List<dynamic>?)?.map((w) => w.toString().toLowerCase()).toList() ?? [];
@@ -213,8 +234,29 @@ class CarpoolRoutesRemoteDataSourceImpl implements CarpoolRoutesRemoteDataSource
             isPrimary: false,
           );
 
+          // Decode complete driving route polyline from all steps across all legs
+          final List<RouteCoordinate> fullDecoded = [];
+          for (final leg in legs) {
+            final legMap = leg as Map<String, dynamic>?;
+            final legSteps = legMap?['steps'] as List<dynamic>?;
+            if (legSteps != null) {
+              for (final st in legSteps) {
+                final stMap = st as Map<String, dynamic>?;
+                final stPoly = stMap?['polyline']?['points']?.toString();
+                if (stPoly != null && stPoly.isNotEmpty) {
+                  final pts = _decodePolyline(stPoly);
+                  if (fullDecoded.isEmpty) {
+                    fullDecoded.addAll(pts);
+                  } else {
+                    fullDecoded.addAll(pts.skip(1));
+                  }
+                }
+              }
+            }
+          }
+
           final encodedPoints = r['overview_polyline']?['points']?.toString() ?? '';
-          final decoded = _decodePolyline(encodedPoints);
+          final decoded = fullDecoded.isNotEmpty ? fullDecoded : _decodePolyline(encodedPoints);
 
           final corridorText = CarpoolDistanceCalculator.buildCorridorTownsPath(
             originName: origin.name,

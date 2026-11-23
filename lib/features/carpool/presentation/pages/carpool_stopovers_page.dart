@@ -6,12 +6,14 @@ import '../../../../core/constants/api_endpoints.dart';
 import '../../../../core/utils/carpool_distance_calculator.dart';
 import '../../data/datasources/places_remote_data_source.dart';
 import '../../data/repositories/places_repository_impl.dart';
-import '../../domain/entities/carpool_route_option_entity.dart';
+import '../../domain/entities/carpool_stopover_entity.dart';
+import '../../domain/entities/carpool_temporary_ride_data.dart';
 import '../../domain/entities/place_prediction_entity.dart';
 import '../../domain/usecases/get_place_predictions_usecase.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
 import 'carpool_ride_summary_page.dart';
 import 'carpool_schedule_ride_page.dart';
+import 'carpool_stopover_search_page.dart';
 
 /// Clean Architecture CarpoolStopoversPage – Route-Based Nearby City Suggestions.
 /// Inserted between [CarpoolPublishRidePage] and [CarpoolRideSummaryPage].
@@ -164,13 +166,21 @@ class _StopoversViewState extends State<_StopoversView> {
     _searchFocusNode.unfocus();
   }
 
-  /// Validates candidate location against the actual driving route polyline
+  /// Validates candidate location against the actual selected driving route polyline (Strict 10 KM max deviation)
   RouteAdjustment _validateStopover(
     CarpoolOfferRideState state,
     String candidateName, {
     double? candidateLat,
     double? candidateLng,
   }) {
+    List<({double lat, double lng})>? routePolyline;
+    if (state.selectedRouteOption != null &&
+        state.selectedRouteOption!.waypoints.isNotEmpty) {
+      routePolyline = state.selectedRouteOption!.waypoints
+          .map((w) => (lat: w.lat, lng: w.lng))
+          .toList();
+    }
+
     return CarpoolDistanceCalculator.validateLocationOnRoute(
       start: state.from,
       destination: state.to,
@@ -182,6 +192,12 @@ class _StopoversViewState extends State<_StopoversView> {
       destLat: state.toLat,
       destLng: state.toLng,
       currentStopovers: state.selectedStopovers.toList(),
+      routePolyline: routePolyline,
+      corridorText: state.selectedRouteOption?.corridorText,
+      routeName:
+          state.selectedRouteOption?.highwayName ??
+          state.selectedRouteOption?.title,
+      maxDistanceToRouteKm: 10.0,
     );
   }
 
@@ -195,6 +211,30 @@ class _StopoversViewState extends State<_StopoversView> {
     double? lng,
   ) {
     _searchFocusNode.unfocus();
+
+    final adj = _validateStopover(
+      state,
+      candidateName,
+      candidateLat: lat,
+      candidateLng: lng,
+    );
+
+    // Reject stopover if it is more than 10 KM away from the selected route
+    if (!adj.isOnRoute) {
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'This city is not on your selected route. Please select a city within 10 KM of your route.',
+            style: TextStyle(fontWeight: FontWeight.w600),
+          ),
+          backgroundColor: Color(0xFFDC2626),
+          duration: Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
 
     showModalBottomSheet<void>(
       context: context,
@@ -346,7 +386,60 @@ class _StopoversViewState extends State<_StopoversView> {
 
   void _onContinue(BuildContext context) {
     final bloc = context.read<CarpoolOfferRideBloc>();
-    CarpoolScheduleRidePage.show(context, bloc);
+    final s = bloc.state;
+    List<CarpoolStopoverEntity> halts = [];
+
+    if (s.stopoverObjects.isNotEmpty) {
+      halts = List.from(s.stopoverObjects);
+    } else if (CarpoolTemporaryRideData.instance.stopoverHalts.isNotEmpty) {
+      halts = List.from(CarpoolTemporaryRideData.instance.stopoverHalts);
+    } else if (s.selectedStopovers.isNotEmpty || s.stopovers.isNotEmpty) {
+      final names = s.selectedStopovers.isNotEmpty
+          ? s.selectedStopovers.toList()
+          : s.stopovers;
+      halts = names.map((name) {
+        final coords = CarpoolDistanceCalculator.resolveCoordinates(name);
+        final geo = CarpoolDistanceCalculator.findGeo(name);
+        return CarpoolStopoverEntity(
+          latitude: coords.lat,
+          longitude: coords.lng,
+          address: geo != null
+              ? '${geo.name}, ${geo.district}, ${geo.state}'
+              : name,
+          state: geo?.state ?? 'India',
+          city: name.split(',').first.trim(),
+        );
+      }).toList();
+    }
+
+    if (halts.isNotEmpty) {
+      final ordered = CarpoolDistanceCalculator.orderStopoverEntities(
+        start: s.from,
+        destination: s.to,
+        stopovers: halts,
+        startLat: s.fromLat,
+        startLng: s.fromLng,
+        destLat: s.toLat,
+        destLng: s.toLng,
+        routePolyline: s.selectedRouteOption?.waypoints
+            .map((w) => (lat: w.lat, lng: w.lng))
+            .toList(),
+      );
+      halts = ordered;
+      CarpoolTemporaryRideData.instance.saveStopoverHalts(ordered);
+      bloc.add(CarpoolOfferStopoverObjectsUpdated(ordered));
+    }
+
+    CarpoolScheduleRidePage.show(
+      context,
+      bloc,
+      stopovers: halts.isNotEmpty ? halts : null,
+    );
+  }
+
+  void _navigateToCitySearchPage(BuildContext context) {
+    final bloc = context.read<CarpoolOfferRideBloc>();
+    CarpoolStopoverSearchPage.show(context, bloc);
   }
 
   @override
@@ -356,7 +449,25 @@ class _StopoversViewState extends State<_StopoversView> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: BlocBuilder<CarpoolOfferRideBloc, CarpoolOfferRideState>(
+        child: BlocConsumer<CarpoolOfferRideBloc, CarpoolOfferRideState>(
+          listenWhen: (prev, curr) =>
+              curr.routesError != null && curr.routesError != prev.routesError,
+          listener: (context, state) {
+            if (state.routesError != null && state.routesError!.isNotEmpty) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(
+                    state.routesError!,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  backgroundColor: const Color(0xFFDC2626),
+                  duration: const Duration(seconds: 4),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+            }
+          },
           builder: (context, state) {
             // Dynamic recalculation of total distance and duration
             int totalRouteKm;
@@ -375,20 +486,22 @@ class _StopoversViewState extends State<_StopoversView> {
                   toLat: state.toLat,
                   toLng: state.toLng,
                 );
-                totalDuration =
-                    CarpoolDistanceCalculator.estimateDuration(totalRouteKm);
+                totalDuration = CarpoolDistanceCalculator.estimateDuration(
+                  totalRouteKm,
+                );
               }
             } else {
               // Recalculate along the route passing through selected stopovers
-              final ordered = CarpoolDistanceCalculator.orderStopoversInCorridor(
-                start: state.from,
-                destination: state.to,
-                stopovers: state.selectedStopovers.toList(),
-                startLat: state.fromLat,
-                startLng: state.fromLng,
-                destLat: state.toLat,
-                destLng: state.toLng,
-              );
+              final ordered =
+                  CarpoolDistanceCalculator.orderStopoversInCorridor(
+                    start: state.from,
+                    destination: state.to,
+                    stopovers: state.selectedStopovers.toList(),
+                    startLat: state.fromLat,
+                    startLng: state.fromLng,
+                    destLat: state.toLat,
+                    destLng: state.toLng,
+                  );
 
               double accum = 0.0;
               String prevPlace = state.from;
@@ -420,8 +533,9 @@ class _StopoversViewState extends State<_StopoversView> {
               );
 
               totalRouteKm = accum.round().clamp(1, 9999);
-              totalDuration =
-                  CarpoolDistanceCalculator.estimateDuration(totalRouteKm);
+              totalDuration = CarpoolDistanceCalculator.estimateDuration(
+                totalRouteKm,
+              );
             }
 
             return Padding(
@@ -496,86 +610,55 @@ class _StopoversViewState extends State<_StopoversView> {
 
                   const SizedBox(height: 14),
 
-                  // 3. Smart Stopover Search Input Field
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F7FD),
-                      borderRadius: BorderRadius.circular(16),
-                      border: Border.all(
-                        color: _isSearchActive
-                            ? primaryPurple
-                            : const Color(0xFFE2DCF9),
-                        width: _isSearchActive ? 1.6 : 1.2,
-                      ),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 2,
-                    ),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.search_rounded,
-                          color: _isSearchActive
-                              ? primaryPurple
-                              : const Color(0xFF9E98BE),
-                          size: 22,
+                  // 3. Search City Action Field (Tapping navigates to new full-screen search page)
+                  InkWell(
+                    onTap: () => _navigateToCitySearchPage(context),
+                    borderRadius: BorderRadius.circular(16),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F7FD),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: const Color(0xFFE2DCF9),
+                          width: 1.2,
                         ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: TextField(
-                            controller: _searchController,
-                            focusNode: _searchFocusNode,
-                            onChanged: _onSearchChanged,
-                            style: const TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF140D43),
-                            ),
-                            decoration: const InputDecoration(
-                              hintText: 'Search city, town, or village...',
-                              hintStyle: TextStyle(
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 13,
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.search_rounded,
+                            color: Color(0xFF9E98BE),
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          const Expanded(
+                            child: Text(
+                              'Search city, town, or village...',
+                              style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w500,
                                 color: Color(0xFF9E98BE),
                               ),
-                              border: InputBorder.none,
-                              enabledBorder: InputBorder.none,
-                              focusedBorder: InputBorder.none,
-                              errorBorder: InputBorder.none,
-                              disabledBorder: InputBorder.none,
-                              isDense: true,
-                              contentPadding: EdgeInsets.symmetric(
-                                vertical: 12,
-                              ),
                             ),
                           ),
-                        ),
-                        if (_searchController.text.isNotEmpty)
-                          GestureDetector(
-                            onTap: _onClearSearch,
-                            child: const Padding(
-                              padding: EdgeInsets.all(4),
-                              child: Icon(
-                                Icons.close_rounded,
-                                size: 18,
-                                color: Color(0xFF8A84A7),
-                              ),
+                          Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF1EEFC),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.arrow_forward_ios_rounded,
+                              size: 11,
+                              color: primaryPurple,
                             ),
                           ),
-                        if (_isLoadingSuggestions)
-                          const Padding(
-                            padding: EdgeInsets.all(8),
-                            child: SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: primaryPurple,
-                              ),
-                            ),
-                          ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
 
@@ -586,14 +669,8 @@ class _StopoversViewState extends State<_StopoversView> {
 
                   const SizedBox(height: 6),
 
-                  // 4. Main Body: Live Search Results OR Route-Based Suggested Cities List
-                  Expanded(
-                    child:
-                        _isSearchActive &&
-                            _searchController.text.trim().isNotEmpty
-                        ? _buildSearchSuggestions(state)
-                        : _buildStopoversList(state),
-                  ),
+                  // 4. Main Body: Route-Based Suggested Cities List
+                  Expanded(child: _buildStopoversList(state)),
                 ],
               ),
             );
@@ -710,14 +787,62 @@ class _StopoversViewState extends State<_StopoversView> {
         );
 
         return InkWell(
-          onTap: () => _showRouteAdjustmentModal(
-            context,
-            state,
-            name,
-            suggestion.secondaryText,
-            suggestion.lat,
-            suggestion.lng,
-          ),
+          onTap: () async {
+            double? sLat = suggestion.lat;
+            double? sLng = suggestion.lng;
+            if (sLat == null || sLng == null || sLat < 6.5 || sLat > 38.0) {
+              final fetched =
+                  await CarpoolDistanceCalculator.fetchGeocodeCoordinates(
+                    suggestion.placeId.isNotEmpty
+                        ? suggestion.placeId
+                        : suggestion.description,
+                    isPlaceId: suggestion.placeId.isNotEmpty,
+                  ) ??
+                  await CarpoolDistanceCalculator.fetchGeocodeCoordinates(
+                    suggestion.description,
+                    isPlaceId: false,
+                  ) ??
+                  await CarpoolDistanceCalculator.fetchGeocodeCoordinates(
+                    name,
+                    isPlaceId: false,
+                  );
+              if (fetched != null) {
+                sLat = fetched.lat;
+                sLng = fetched.lng;
+              }
+            }
+
+            final validatedAdj = _validateStopover(
+              state,
+              name,
+              candidateLat: sLat,
+              candidateLng: sLng,
+            );
+
+            if (!validatedAdj.isOnRoute) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'This city is not on your selected route. Please select a city within 10 KM of your route.',
+                    style: TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  backgroundColor: Color(0xFFDC2626),
+                  duration: Duration(seconds: 4),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              return;
+            }
+            _showRouteAdjustmentModal(
+              context,
+              state,
+              name,
+              suggestion.secondaryText,
+              sLat,
+              sLng,
+            );
+          },
           borderRadius: BorderRadius.circular(12),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
@@ -762,12 +887,18 @@ class _StopoversViewState extends State<_StopoversView> {
                       if (suggestion.secondaryText.isNotEmpty) ...[
                         const SizedBox(height: 2),
                         Text(
-                          suggestion.secondaryText,
+                          adj.isOnRoute
+                              ? suggestion.secondaryText
+                              : (adj.distanceToRouteKm < 9000
+                                    ? '${adj.distanceToRouteKm.toStringAsFixed(1)} km from route • ${suggestion.secondaryText}'
+                                    : suggestion.secondaryText),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
-                            color: Color(0xFF6B658C),
+                            color: adj.isOnRoute
+                                ? const Color(0xFF6B658C)
+                                : const Color(0xFFB91C1C),
                           ),
                         ),
                       ],
@@ -805,7 +936,7 @@ class _StopoversViewState extends State<_StopoversView> {
                       Text(
                         adj.isOnRoute
                             ? 'On your route'
-                            : 'This location is not on your route',
+                            : 'Not on route (> 10 km)',
                         style: TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
@@ -989,7 +1120,12 @@ class _StopoversViewState extends State<_StopoversView> {
       if (cityEntity != null && cityEntity.isOnRoute) {
         onRouteCityNames.add(name);
       } else {
-        final adj = _validateStopover(state, name);
+        final adj = _validateStopover(
+          state,
+          name,
+          candidateLat: cityEntity?.lat,
+          candidateLng: cityEntity?.lng,
+        );
         if (adj.isOnRoute) {
           onRouteCityNames.add(name);
         } else {
@@ -1040,7 +1176,8 @@ class _StopoversViewState extends State<_StopoversView> {
             final distText = cityEntity != null
                 ? '${cityEntity.distanceKm} km from start'
                 : 'On route';
-            final hasTolls = cityEntity?.hasTolls ??
+            final hasTolls =
+                cityEntity?.hasTolls ??
                 (state.selectedRouteOption?.hasTolls ?? false);
 
             return _buildCityItemRow(
@@ -1052,8 +1189,39 @@ class _StopoversViewState extends State<_StopoversView> {
               isOnRoute: true,
               detourText: null,
               onTap: () {
+                CarpoolStopoverEntity? stopoverObj;
+                if (cityEntity != null) {
+                  stopoverObj = CarpoolStopoverEntity(
+                    latitude: cityEntity.lat,
+                    longitude: cityEntity.lng,
+                    address: cityEntity.subtitle ?? cityEntity.name,
+                    state:
+                        (cityEntity.subtitle != null &&
+                            cityEntity.subtitle!.contains(','))
+                        ? cityEntity.subtitle!.split(',').last.trim()
+                        : 'India',
+                    city: cityEntity.name,
+                  );
+                } else {
+                  final coords = CarpoolDistanceCalculator.resolveCoordinates(
+                    cityName,
+                  );
+                  final geo = CarpoolDistanceCalculator.findGeo(cityName);
+                  stopoverObj = CarpoolStopoverEntity(
+                    latitude: coords.lat,
+                    longitude: coords.lng,
+                    address: geo != null
+                        ? '${geo.name}, ${geo.district}, ${geo.state}'
+                        : cityName,
+                    state: geo?.state ?? 'India',
+                    city: cityName,
+                  );
+                }
                 context.read<CarpoolOfferRideBloc>().add(
-                  CarpoolOfferStopoverToggled(cityName),
+                  CarpoolOfferStopoverToggled(
+                    cityName,
+                    stopoverObject: stopoverObj,
+                  ),
                 );
               },
               onRemove: () {
@@ -1100,19 +1268,37 @@ class _StopoversViewState extends State<_StopoversView> {
           ...List.generate(outsideRouteCityNames.length, (index) {
             final cityName = outsideRouteCityNames[index];
             final isSelected = state.selectedStopovers.contains(cityName);
-            final adj = _validateStopover(state, cityName);
+            final cityEntity = routeCityMap[cityName.toLowerCase()];
+            final adj = _validateStopover(
+              state,
+              cityName,
+              candidateLat: cityEntity?.lat,
+              candidateLng: cityEntity?.lng,
+            );
 
             return _buildCityItemRow(
               cityName: cityName,
               index: onRouteCityNames.length + index + 1,
               isSelected: isSelected,
-              distanceText: null,
+              distanceText: adj.distanceToRouteKm < 9000
+                  ? '${adj.distanceToRouteKm.toStringAsFixed(1)} km from route'
+                  : null,
               hasTolls: false,
               isOnRoute: false,
-              detourText: '+${adj.additionalKm} km detour',
+              detourText: '> 10 km (Not on route)',
               onTap: () {
-                context.read<CarpoolOfferRideBloc>().add(
-                  CarpoolOfferStopoverToggled(cityName),
+                // Reject adding / selecting any city more than 10 KM away from the selected route
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'This city is not on your selected route. Please select a city within 10 KM of your route.',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    backgroundColor: Color(0xFFDC2626),
+                    duration: Duration(seconds: 4),
+                    behavior: SnackBarBehavior.floating,
+                  ),
                 );
               },
               onRemove: () {
@@ -1158,10 +1344,7 @@ class _StopoversViewState extends State<_StopoversView> {
           padding: const EdgeInsets.only(top: 18),
           child: InkWell(
             borderRadius: BorderRadius.circular(8),
-            onTap: () {
-              _searchFocusNode.requestFocus();
-              setState(() => _isSearchActive = true);
-            },
+            onTap: () => _navigateToCitySearchPage(context),
             child: const Padding(
               padding: EdgeInsets.symmetric(vertical: 8, horizontal: 2),
               child: Row(
@@ -1208,7 +1391,7 @@ class _StopoversViewState extends State<_StopoversView> {
             padding: const EdgeInsets.symmetric(vertical: 11),
             child: Row(
               children: [
-                // 1. Custom Checkbox
+                // 1. Custom Checkbox (Disabled / restricted styling when outside 10 km route corridor)
                 InkWell(
                   onTap: onTap,
                   borderRadius: BorderRadius.circular(6),
@@ -1216,10 +1399,18 @@ class _StopoversViewState extends State<_StopoversView> {
                     width: 24,
                     height: 24,
                     decoration: BoxDecoration(
-                      color: isSelected ? primaryPurple : Colors.transparent,
+                      color: isSelected
+                          ? primaryPurple
+                          : (!isOnRoute
+                                ? const Color(0xFFF1F5F9)
+                                : Colors.transparent),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(
-                        color: primaryPurple,
+                        color: isSelected
+                            ? primaryPurple
+                            : (!isOnRoute
+                                  ? const Color(0xFFCBD5E1)
+                                  : primaryPurple),
                         width: 1.8,
                       ),
                     ),
@@ -1230,7 +1421,13 @@ class _StopoversViewState extends State<_StopoversView> {
                             color: Colors.white,
                             size: 17,
                           )
-                        : null,
+                        : (!isOnRoute
+                              ? const Icon(
+                                  Icons.block_rounded,
+                                  color: Color(0xFF94A3B8),
+                                  size: 14,
+                                )
+                              : null),
                   ),
                 ),
 
@@ -1369,11 +1566,7 @@ class _StopoversViewState extends State<_StopoversView> {
               ],
             ),
           ),
-          const Divider(
-            height: 1,
-            thickness: 1,
-            color: Color(0xFFF1EEFC),
-          ),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFF1EEFC)),
         ],
       ),
     );

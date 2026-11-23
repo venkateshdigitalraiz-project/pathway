@@ -177,316 +177,6 @@ class _SearchBookingRiderView extends StatelessWidget {
     );
   }
 
-  void _showBookingBottomSheet(BuildContext context, CarpoolRideEntity ride) {
-    int selectedSeats = 1;
-    final maxSeats = ride.seats > 0 ? ride.seats : 1;
-    final notesCtrl = TextEditingController();
-    final pickupCtrl = TextEditingController(text: ride.from);
-
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (sheetContext) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            final totalCost = selectedSeats * ride.pricePerSeat;
-            return Container(
-              padding: EdgeInsets.fromLTRB(
-                20,
-                16,
-                20,
-                MediaQuery.of(ctx).viewInsets.bottom + 24,
-              ),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
-              ),
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 44,
-                        height: 4.5,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE2E8F0),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'Book Your Seat',
-                                style: TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w800,
-                                  color: Color(0xFF140D43),
-                                ),
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                'With ${ride.driverName} (${ride.vehicle})',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  color: Color(0xFF6B658C),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 5,
-                          ),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF3F0FF),
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                          child: Text(
-                            CarpoolFormatters.rupee(ride.pricePerSeat),
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFF5D24F7),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const Divider(height: 26, color: Color(0xFFEDE8FF)),
-
-                    // Seat count selector
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Number of Seats',
-                          style: TextStyle(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                            color: Color(0xFF140D43),
-                          ),
-                        ),
-                        Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9F8FE),
-                            borderRadius: BorderRadius.circular(14),
-                            border: Border.all(color: const Color(0xFFEDE8FF)),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove, size: 18),
-                                color: selectedSeats > 1
-                                    ? const Color(0xFF5D24F7)
-                                    : const Color(0xFFCBD5E1),
-                                onPressed: selectedSeats > 1
-                                    ? () => setSheetState(() => selectedSeats--)
-                                    : null,
-                              ),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                ),
-                                child: Text(
-                                  '$selectedSeats',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                    color: Color(0xFF140D43),
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add, size: 18),
-                                color: selectedSeats < maxSeats
-                                    ? const Color(0xFF5D24F7)
-                                    : const Color(0xFFCBD5E1),
-                                onPressed: selectedSeats < maxSeats
-                                    ? () => setSheetState(() => selectedSeats++)
-                                    : null,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-
-                    // Pickup Address input
-                    TextField(
-                      controller: pickupCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Pickup Point',
-                        labelStyle: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF6B658C),
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.location_on_outlined,
-                          size: 19,
-                          color: Color(0xFF5D24F7),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFF9F8FE),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFEDE8FF),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFEDE8FF),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF5D24F7),
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // Notes input
-                    TextField(
-                      controller: notesCtrl,
-                      decoration: InputDecoration(
-                        labelText: 'Notes for driver (optional)',
-                        labelStyle: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF6B658C),
-                        ),
-                        prefixIcon: const Icon(
-                          Icons.edit_note_rounded,
-                          size: 21,
-                          color: Color(0xFF6B658C),
-                        ),
-                        filled: true,
-                        fillColor: const Color(0xFFF9F8FE),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFEDE8FF),
-                          ),
-                        ),
-                        enabledBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFFEDE8FF),
-                          ),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(14),
-                          borderSide: const BorderSide(
-                            color: Color(0xFF5D24F7),
-                            width: 1.5,
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // Summary row & Confirm button
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 16,
-                        vertical: 12,
-                      ),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF3F0FF),
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Total Payable',
-                            style: TextStyle(
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF140D43),
-                            ),
-                          ),
-                          Text(
-                            CarpoolFormatters.rupee(totalCost),
-                            style: const TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w900,
-                              color: Color(0xFF5D24F7),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-
-                    SizedBox(
-                      width: double.infinity,
-                      height: 50,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF5D24F7),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          elevation: 0,
-                        ),
-                        onPressed: () {
-                          Navigator.pop(sheetContext);
-                          context.read<SearchBookingRiderBloc>().add(
-                            SearchBookingRiderBookSeatRequested(
-                              ride: ride,
-                              seats: selectedSeats,
-                              pickupPoint: pickupCtrl.text.trim(),
-                              passengerNotes: notesCtrl.text.trim(),
-                            ),
-                          );
-                        },
-                        child: const Text(
-                          'Confirm & Book Seat',
-                          style: TextStyle(
-                            fontSize: 15.5,
-                            fontWeight: FontWeight.w700,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final fromName = originCity?.isNotEmpty == true ? originCity! : 'Origin';
@@ -529,17 +219,17 @@ class _SearchBookingRiderView extends StatelessWidget {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(
-              Icons.refresh_rounded,
-              color: Color(0xFF5D24F7),
-              size: 22,
-            ),
-            tooltip: 'Refresh',
-            onPressed: () => _triggerSearch(context),
-          ),
-        ],
+        // actions: [
+        //   IconButton(
+        //     icon: const Icon(
+        //       Icons.refresh_rounded,
+        //       color: Color(0xFF5D24F7),
+        //       size: 22,
+        //     ),
+        //     tooltip: 'Refresh',
+        //     onPressed: () => _triggerSearch(context),
+        //   ),
+        // ],
       ),
       body: BlocConsumer<SearchBookingRiderBloc, SearchBookingRiderState>(
         listenWhen: (prev, curr) =>
@@ -726,7 +416,7 @@ class _SearchBookingRiderView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 20),
-              ElevatedButton.icon(
+              ElevatedButton(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: const Color(0xFF5D24F7),
                   shape: RoundedRectangleBorder(
@@ -739,12 +429,7 @@ class _SearchBookingRiderView extends StatelessWidget {
                   elevation: 0,
                 ),
                 onPressed: () => _triggerSearch(context),
-                icon: const Icon(
-                  Icons.refresh_rounded,
-                  size: 18,
-                  color: Colors.white,
-                ),
-                label: const Text(
+                child: const Text(
                   'Search Again',
                   style: TextStyle(
                     fontSize: 14,
@@ -770,17 +455,226 @@ class _SearchBookingRiderView extends StatelessWidget {
         return _RideCard(
           ride: ride,
           isBooking: isBookingThis,
-          onBook: () => _showBookingBottomSheet(context, ride),
-          onTap: () {
-            SearchBookingDetailsPage.show(
+          onBook: () => _showBookingDialog(context, ride),
+          onTap: () async {
+            final booked = await SearchBookingDetailsPage.show(
               context,
               rideId: ride.id,
               initialRide: ride,
             );
+            if (booked == true && context.mounted) {
+              _triggerSearch(context);
+            }
           },
         );
       },
     );
+  }
+
+  Future<void> _showBookingDialog(
+    BuildContext context,
+    CarpoolRideEntity ride,
+  ) async {
+    int selectedSeats = 1;
+    final maxSeats = ride.seats > 0 ? ride.seats : 1;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(24),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEDE8FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.airline_seat_recline_normal_rounded,
+                  color: Color(0xFF5D24F7),
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Confirm Seat Booking',
+                  style: TextStyle(
+                    color: Color(0xFF140D43),
+                    fontWeight: FontWeight.w800,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '${ride.from} → ${ride.to}',
+                style: const TextStyle(
+                  color: Color(0xFF140D43),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14.5,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                CarpoolFormatters.headline(ride.departure),
+                style: const TextStyle(
+                  color: Color(0xFF5D24F7),
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+              if (ride.estimatedDuration.isNotEmpty ||
+                  ride.displayDistance.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  (ride.estimatedDuration.isNotEmpty &&
+                          ride.displayDistance.isNotEmpty)
+                      ? '${ride.estimatedDuration} • ${ride.displayDistance}'
+                      : (ride.estimatedDuration.isNotEmpty
+                          ? ride.estimatedDuration
+                          : ride.displayDistance),
+                  style: const TextStyle(
+                    color: Color(0xFF1A73E8),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 14),
+
+              // Seats selector
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text(
+                    'Seats to Book',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF140D43),
+                    ),
+                  ),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7F5FE),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: const Color(0xFFDDD6FE)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.remove_rounded, size: 18),
+                          color: const Color(0xFF5D24F7),
+                          onPressed: selectedSeats > 1
+                              ? () => setDialogState(() => selectedSeats--)
+                              : null,
+                        ),
+                        Text(
+                          '$selectedSeats',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF140D43),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_rounded, size: 18),
+                          color: const Color(0xFF5D24F7),
+                          onPressed: selectedSeats < maxSeats
+                              ? () => setDialogState(() => selectedSeats++)
+                              : null,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9F8FE),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFEDE8FF)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      '$selectedSeats seat(s) × ₹${ride.pricePerSeat}',
+                      style: const TextStyle(
+                        color: Color(0xFF6B658C),
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    Text(
+                      CarpoolFormatters.rupee(ride.pricePerSeat * selectedSeats),
+                      style: const TextStyle(
+                        color: Color(0xFF5D24F7),
+                        fontSize: 16.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text(
+                'Cancel',
+                style: TextStyle(color: Color(0xFF6B658C)),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF5D24F7),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 10,
+                ),
+              ),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text(
+                'Book Now',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<SearchBookingRiderBloc>().add(
+        SearchBookingRiderBookSeatRequested(
+          ride: ride,
+          seats: selectedSeats,
+        ),
+      );
+    }
   }
 }
 
@@ -945,68 +839,166 @@ class _RideCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(14),
                     border: Border.all(color: const Color(0xFFEDE8FF)),
                   ),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Column(
+                      Row(
                         children: [
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFF10B981),
-                              shape: BoxShape.circle,
+                          Column(
+                            children: [
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFF10B981),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              Container(
+                                width: 2,
+                                height: 18,
+                                color: const Color(0xFFDDD6FE),
+                              ),
+                              Container(
+                                width: 10,
+                                height: 10,
+                                decoration: const BoxDecoration(
+                                  color: Color(0xFFEF4444),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ride.from,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF140D43),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                                Text(
+                                  ride.to,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF140D43),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          Container(
-                            width: 2,
-                            height: 18,
-                            color: const Color(0xFFDDD6FE),
-                          ),
-                          Container(
-                            width: 10,
-                            height: 10,
-                            decoration: const BoxDecoration(
-                              color: Color(0xFFEF4444),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              ride.from,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF140D43),
+                          if (ride.estimatedDuration.isNotEmpty ||
+                              ride.displayDistance.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 9,
+                                vertical: 6,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(10),
+                                border: Border.all(
+                                  color: const Color(0xFFEDE8FF),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (ride.estimatedDuration.isNotEmpty)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.access_time_rounded,
+                                          size: 12,
+                                          color: Color(0xFF5D24F7),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          ride.estimatedDuration,
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: Color(0xFF5D24F7),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  if (ride.displayDistance.isNotEmpty) ...[
+                                    const SizedBox(height: 3),
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(
+                                          Icons.route_rounded,
+                                          size: 12,
+                                          color: Color(0xFF7C3AED),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          ride.displayDistance,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: Color(0xFF475569),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            Text(
-                              ride.to,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF140D43),
+                          ],
+                        ],
+                      ),
+                      if (ride.stopovers != null &&
+                          ride.stopovers!.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 6),
+                          child: Divider(height: 1, color: Color(0xFFEDE8FF)),
+                        ),
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.alt_route_rounded,
+                              size: 13,
+                              color: Color(0xFFD97706),
+                            ),
+                            const SizedBox(width: 5),
+                            Expanded(
+                              child: Text(
+                                'Via: ${ride.stopovers!.map((s) => s['city']?.toString() ?? s['name']?.toString() ?? '').where((c) => c.isNotEmpty).join(' • ')}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF92400E),
+                                ),
                               ),
                             ),
                           ],
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
                 const SizedBox(height: 12),
 
-                // Key Chips Row: Time, Available Seats, Vehicle
+                // Key Chips Row: Time, Duration & Distance, Available Seats, Vehicle
                 Wrap(
                   spacing: 8,
                   runSpacing: 8,
@@ -1019,6 +1011,22 @@ class _RideCard extends StatelessWidget {
                       bgColor: const Color(0xFFF3F0FF),
                       textColor: const Color(0xFF140D43),
                     ),
+                    // Estimated Journey Time & Distance Pill
+                    if (ride.estimatedDuration.isNotEmpty ||
+                        ride.displayDistance.isNotEmpty)
+                      _buildPill(
+                        icon: Icons.timer_outlined,
+                        iconColor: const Color(0xFF1A73E8),
+                        text:
+                            (ride.estimatedDuration.isNotEmpty &&
+                                ride.displayDistance.isNotEmpty)
+                            ? '${ride.estimatedDuration} • ${ride.displayDistance}'
+                            : (ride.estimatedDuration.isNotEmpty
+                                  ? ride.estimatedDuration
+                                  : ride.displayDistance),
+                        bgColor: const Color(0xFFE8F0FE),
+                        textColor: const Color(0xFF1A73E8),
+                      ),
                     // Available Seats
                     _buildPill(
                       icon: Icons.event_seat_rounded,

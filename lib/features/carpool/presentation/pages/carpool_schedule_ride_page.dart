@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:intl/intl.dart';
+import 'package:pathway/features/carpool/domain/entities/carpool_temporary_ride_data.dart';
 
 import '../bloc/carpool_offer_ride_bloc.dart';
 import '../bloc/carpool_schedule_ride_bloc.dart';
+import '../../domain/entities/carpool_stopover_entity.dart';
 import 'carpool_ride_summary_page.dart';
 
 /// Clean Architecture Schedule Ride Page (Customized Calendar & Time Picker).
@@ -16,17 +18,26 @@ import 'carpool_ride_summary_page.dart';
 /// 5. Proceeds to [CarpoolRideSummaryPage] on confirmation.
 class CarpoolScheduleRidePage extends StatelessWidget {
   final CarpoolOfferRideBloc offerBloc;
+  final List<CarpoolStopoverEntity>? stopovers;
 
-  const CarpoolScheduleRidePage({super.key, required this.offerBloc});
+  const CarpoolScheduleRidePage({
+    super.key,
+    required this.offerBloc,
+    this.stopovers,
+  });
 
   /// Navigates to [CarpoolScheduleRidePage] safely on the root navigator.
   static Future<void> show(
     BuildContext context,
-    CarpoolOfferRideBloc offerBloc,
-  ) {
+    CarpoolOfferRideBloc offerBloc, {
+    List<CarpoolStopoverEntity>? stopovers,
+  }) {
     return Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute(
-        builder: (_) => CarpoolScheduleRidePage(offerBloc: offerBloc),
+        builder: (_) => CarpoolScheduleRidePage(
+          offerBloc: offerBloc,
+          stopovers: stopovers ?? offerBloc.state.stopoverObjects,
+        ),
       ),
     );
   }
@@ -42,13 +53,16 @@ class CarpoolScheduleRidePage extends StatelessWidget {
           ),
         ),
       ],
-      child: const _ScheduleRideView(),
+      child: _ScheduleRideView(
+        stopovers: stopovers ?? offerBloc.state.stopoverObjects,
+      ),
     );
   }
 }
 
 class _ScheduleRideView extends StatelessWidget {
-  const _ScheduleRideView();
+  final List<CarpoolStopoverEntity>? stopovers;
+  const _ScheduleRideView({this.stopovers});
 
   static const Color primaryPurple = Color(0xFF4C2BF0);
   static const Color darkPurple = Color(0xFF140D43);
@@ -67,11 +81,21 @@ class _ScheduleRideView extends StatelessWidget {
       ),
     );
 
-    // 2. Proceed to CarpoolRideSummaryPage (_onContinue page)
+    // 2. Proceed to CarpoolRideSummaryPage (_onContinue page) with complete ordered stopovers
+    final List<CarpoolStopoverEntity>? activeHalts =
+        (stopovers != null && stopovers!.isNotEmpty)
+        ? stopovers
+        : (CarpoolTemporaryRideData.instance.stopoverHalts.isNotEmpty
+              ? CarpoolTemporaryRideData.instance.stopoverHalts
+              : (offerBloc.state.stopoverObjects.isNotEmpty
+                    ? offerBloc.state.stopoverObjects
+                    : null));
+
     CarpoolRideSummaryPage.show(
       context,
       offerBloc,
       pricing: offerBloc.state.pricingCalculation,
+      stopovers: activeHalts,
     );
   }
 

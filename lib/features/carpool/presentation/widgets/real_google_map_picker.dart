@@ -29,6 +29,9 @@ class RealGoogleMapPicker extends StatefulWidget {
   final bool showCenterPin;
   final String centerPinLabel;
   final Color centerPinColor;
+  final CarpoolPlaceEntity? singleMarkerPlace;
+  final bool? isSingleMarkerValid;
+  final String? singleMarkerBadgeText;
   final bool showControls;
   final bool showGoogleWatermark;
   final bool showRouteDurationBadges;
@@ -44,6 +47,9 @@ class RealGoogleMapPicker extends StatefulWidget {
     this.zoom = 14.5,
     this.pickupPlace,
     this.dropoffPlace,
+    this.singleMarkerPlace,
+    this.isSingleMarkerValid,
+    this.singleMarkerBadgeText,
     this.routeWaypoints = const [],
     this.routes = const [],
     this.selectedRouteIndex = 0,
@@ -69,10 +75,15 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
   late double _centerLng;
   late int _zoomLevel;
 
+  int get currentZoomLevel => _zoomLevel;
+  double get currentCenterLat => _centerLat;
+  double get currentCenterLng => _centerLng;
+
   Offset _panOffset = Offset.zero;
   double _baseScale = 1.0;
   Size? _viewportSize;
   bool _hasAutoFitted = false;
+  bool _userInteractedWithCamera = false;
 
   // Map tile mode: 0 = Roadmap, 1 = Satellite (hybrid)
   int _mapType = 0;
@@ -86,6 +97,7 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
   }
 
   void animateCamera(double lat, double lng, [double? zoom]) {
+    _userInteractedWithCamera = false;
     setState(() {
       _centerLat = lat;
       _centerLng = lng;
@@ -96,7 +108,8 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
     });
   }
 
-  void fitBounds(List<({double lat, double lng})> waypoints) {
+  void fitBounds(List<({double lat, double lng})> waypoints, {bool force = false}) {
+    if (!force && _userInteractedWithCamera) return;
     if (_viewportSize != null) {
       _fitWaypointsToViewport(waypoints, _viewportSize!);
     }
@@ -112,7 +125,8 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
 
     final bool zoomChanged = (widget.zoom - oldWidget.zoom).abs() > 0.4;
 
-    if (centerChanged || zoomChanged) {
+    // Only reset zoom and center if the user hasn't manually interacted with the camera
+    if (!_userInteractedWithCamera && (centerChanged || zoomChanged)) {
       setState(() {
         _centerLat = widget.centerLat;
         _centerLng = widget.centerLng;
@@ -195,6 +209,7 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
   }
 
   void _zoomIn() {
+    _userInteractedWithCamera = true;
     if (_zoomLevel < 18) {
       setState(() {
         _commitPan();
@@ -205,6 +220,7 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
   }
 
   void _zoomOut() {
+    _userInteractedWithCamera = true;
     if (_zoomLevel > 4) {
       setState(() {
         _commitPan();
@@ -401,6 +417,7 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
               _baseScale = 1.0;
             },
             onScaleUpdate: (details) {
+              _userInteractedWithCamera = true;
               if (details.scale == 1.0) {
                 // Drag / Pan map
                 setState(() {
@@ -494,6 +511,10 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
                     viewport: viewport,
                     waypoints: activeWaypoints,
                   ),
+
+                // 4.1 Single Place Marker (for City Search & Validation)
+                if (widget.singleMarkerPlace != null)
+                  _buildSinglePlaceMarker(viewport),
 
                 // 5. BlaBlaCar Interactive Center Floating Pin (during selection)
                 if (widget.showCenterPin)
@@ -723,6 +744,105 @@ class RealGoogleMapPickerState extends State<RealGoogleMapPicker> {
     }
 
     return Stack(children: badgeWidgets);
+  }
+
+  Widget _buildSinglePlaceMarker(Size viewport) {
+    final place = widget.singleMarkerPlace!;
+    final pos = _project(place.lat, place.lng, viewport);
+    final isValid = widget.isSingleMarkerValid;
+
+    final primaryColor = isValid == true
+        ? const Color(0xFF16A34A)
+        : (isValid == false ? const Color(0xFFDC2626) : const Color(0xFF5D24F7));
+    final iconData = isValid == true
+        ? Icons.check_circle_rounded
+        : (isValid == false ? Icons.error_rounded : Icons.location_on_rounded);
+
+    final badgeText = widget.singleMarkerBadgeText ??
+        (isValid == true
+            ? 'Within 10 km (On route)'
+            : (isValid == false ? '> 10 km (Not on route)' : place.name));
+
+    return Positioned(
+      left: pos.dx - 90,
+      top: pos.dy - 68,
+      width: 180,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // City Name & Status Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: primaryColor, width: 1.5),
+              boxShadow: [
+                BoxShadow(
+                  color: primaryColor.withOpacity(0.25),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(iconData, size: 14, color: primaryColor),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    place.name,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: primaryColor,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 4),
+          // Custom Pin Needle
+          Container(
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: primaryColor,
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white, width: 3),
+              boxShadow: [
+                BoxShadow(
+                  color: primaryColor.withOpacity(0.4),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Icon(
+                iconData,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+          ),
+          // Ground shadow dot
+          Container(
+            width: 8,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.25),
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildMarkerWidget({

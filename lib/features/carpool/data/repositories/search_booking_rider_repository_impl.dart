@@ -131,13 +131,26 @@ class SearchBookingRiderRepositoryImpl implements SearchBookingRiderRepository {
       final storage = AuthLocalStorage();
       await storage.init();
       final token = await storage.getAccessTokenAsync();
+      final cleanToken = token?.replaceAll('Bearer ', '').trim();
+      final authHeader = (cleanToken != null && cleanToken.isNotEmpty)
+          ? 'Bearer $cleanToken'
+          : null;
 
       final headers = <String, String>{
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        // Authorization header commented out as requested
-        // if (token != null && token.isNotEmpty) 'Authorization': 'Bearer $token',
+        if (authHeader != null) 'Authorization': authHeader,
       };
+
+      print('\n==================== [API REQUEST: SEARCH_CARPOOL_RIDES] ====================');
+      print('API_URL: $targetUrl');
+      print('API_METHOD: POST');
+      print('API_HEADERS: $headers');
+      if (authHeader != null) {
+        print('FULL_AUTH_TOKEN: $authHeader');
+      }
+      print('API_BODY: $payloadJson');
+      print('=============================================================================');
 
       ApiLogger.logRequest(
         title: 'SEARCH_CARPOOL_RIDES',
@@ -154,16 +167,21 @@ class SearchBookingRiderRepositoryImpl implements SearchBookingRiderRepository {
           .timeout(const Duration(seconds: 10));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.headers.set(HttpHeaders.acceptHeader, 'application/json');
-      // Authorization header commented out as requested
-      // if (token != null && token.isNotEmpty) {
-      //   request.headers.set(HttpHeaders.authorizationHeader, 'Bearer $token');
-      // }
+      if (authHeader != null) {
+        request.headers.set(HttpHeaders.authorizationHeader, authHeader);
+      }
       request.write(payloadJson);
 
       final response = await request.close().timeout(
         const Duration(seconds: 10),
       );
       final responseBody = await response.transform(utf8.decoder).join();
+
+      print('\n==================== [API RESPONSE: SEARCH_CARPOOL_RIDES] ====================');
+      print('API_URL: $targetUrl');
+      print('STATUS_CODE: ${response.statusCode}');
+      print('API_RESPONSE: $responseBody');
+      print('==============================================================================');
 
       ApiLogger.logResponse(
         title: 'SEARCH_CARPOOL_RIDES',
@@ -188,13 +206,25 @@ class SearchBookingRiderRepositoryImpl implements SearchBookingRiderRepository {
           listJson = decoded;
         }
 
-        final results = listJson
-            .whereType<Map<String, dynamic>>()
-            .map((j) => CarpoolRideModel.fromJson(j))
-            .toList();
+        final List<CarpoolRideEntity> results = [];
+        for (final item in listJson) {
+          if (item is Map<String, dynamic>) {
+            results.add(CarpoolRideModel.fromJson(item));
+          } else if (item is Map) {
+            results.add(CarpoolRideModel.fromJson(
+              item.map((k, v) => MapEntry(k.toString(), v)),
+            ));
+          }
+        }
+        print('PARSED_RIDES_COUNT: ${results.length}');
         return results;
       }
     } catch (e) {
+      print('\n==================== [API ERROR: SEARCH_CARPOOL_RIDES] ====================');
+      print('API_URL: $targetUrl');
+      print('API_ERROR: $e');
+      print('===========================================================================');
+
       ApiLogger.logError(
         title: 'SEARCH_CARPOOL_RIDES',
         url: targetUrl,
