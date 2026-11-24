@@ -17,6 +17,7 @@ import '../../domain/entities/carpool_temporary_ride_data.dart';
 import '../../domain/usecases/carpool_calculate_pricing_usecase.dart';
 import '../../domain/usecases/carpool_usecases.dart';
 import '../../domain/usecases/get_carpool_route_options_usecase.dart';
+import '../../data/datasources/carpool_settings_local_data_source.dart';
 
 enum CarpoolTollFilter { all, toll, noToll }
 
@@ -258,6 +259,34 @@ class CarpoolOfferRouteSelected extends CarpoolOfferRideEvent {
   List<Object?> get props => [route];
 }
 
+class CarpoolOfferNegotiationToggled extends CarpoolOfferRideEvent {
+  final bool value;
+  const CarpoolOfferNegotiationToggled(this.value);
+  @override
+  List<Object?> get props => [value];
+}
+
+class CarpoolOfferMaxTwoInRearToggled extends CarpoolOfferRideEvent {
+  final bool value;
+  const CarpoolOfferMaxTwoInRearToggled(this.value);
+  @override
+  List<Object?> get props => [value];
+}
+
+class CarpoolOfferLadiesOnlyToggled extends CarpoolOfferRideEvent {
+  final bool value;
+  const CarpoolOfferLadiesOnlyToggled(this.value);
+  @override
+  List<Object?> get props => [value];
+}
+
+class CarpoolOfferInstantBookingToggled extends CarpoolOfferRideEvent {
+  final bool value;
+  const CarpoolOfferInstantBookingToggled(this.value);
+  @override
+  List<Object?> get props => [value];
+}
+
 class CarpoolOfferRideState extends Equatable {
   const CarpoolOfferRideState({
     required this.from,
@@ -286,6 +315,10 @@ class CarpoolOfferRideState extends Equatable {
     this.routeCities = const [],
     this.isRoutesLoading = false,
     this.routesError,
+    this.enableNegotiation = false,
+    this.maxTwoInRear = false,
+    this.ladiesOnlyFilter = false,
+    this.instantBookingDefault = false,
   });
 
   factory CarpoolOfferRideState.initial() {
@@ -310,6 +343,11 @@ class CarpoolOfferRideState extends Equatable {
       routeCities: const [],
       isRoutesLoading: false,
       routesError: null,
+      enableNegotiation: CarpoolSettingsStorage.current.enableNegotiation,
+      maxTwoInRear: CarpoolSettingsStorage.current.maxTwoInRear,
+      ladiesOnlyFilter: CarpoolSettingsStorage.current.ladiesOnlyFilter,
+      instantBookingDefault:
+          CarpoolSettingsStorage.current.instantBookingDefault,
     );
   }
 
@@ -339,6 +377,10 @@ class CarpoolOfferRideState extends Equatable {
   final List<CarpoolStopoverCityEntity> routeCities;
   final bool isRoutesLoading;
   final String? routesError;
+  final bool enableNegotiation;
+  final bool maxTwoInRear;
+  final bool ladiesOnlyFilter;
+  final bool instantBookingDefault;
 
   bool get isValid =>
       from.trim().isNotEmpty &&
@@ -377,6 +419,10 @@ class CarpoolOfferRideState extends Equatable {
     bool? isRoutesLoading,
     String? routesError,
     bool clearRoutesError = false,
+    bool? enableNegotiation,
+    bool? maxTwoInRear,
+    bool? ladiesOnlyFilter,
+    bool? instantBookingDefault,
   }) => CarpoolOfferRideState(
     from: from ?? this.from,
     to: to ?? this.to,
@@ -408,6 +454,10 @@ class CarpoolOfferRideState extends Equatable {
     routeCities: routeCities ?? this.routeCities,
     isRoutesLoading: isRoutesLoading ?? this.isRoutesLoading,
     routesError: clearRoutesError ? null : (routesError ?? this.routesError),
+    enableNegotiation: enableNegotiation ?? this.enableNegotiation,
+    maxTwoInRear: maxTwoInRear ?? this.maxTwoInRear,
+    ladiesOnlyFilter: ladiesOnlyFilter ?? this.ladiesOnlyFilter,
+    instantBookingDefault: instantBookingDefault ?? this.instantBookingDefault,
   );
 
   @override
@@ -438,6 +488,10 @@ class CarpoolOfferRideState extends Equatable {
     routeCities,
     isRoutesLoading,
     routesError,
+    enableNegotiation,
+    maxTwoInRear,
+    ladiesOnlyFilter,
+    instantBookingDefault,
   ];
 }
 
@@ -513,8 +567,12 @@ class CarpoolOfferRideBloc
       );
     });
     on<CarpoolOfferSeatsChanged>(
-      (e, emit) =>
-          emit(state.copyWith(seats: (state.seats + e.delta).clamp(1, 6))),
+      (e, emit) {
+        final maxSeats = CarpoolSettingsStorage.current.maxSeatsPerRide > 0
+            ? CarpoolSettingsStorage.current.maxSeatsPerRide
+            : 4;
+        emit(state.copyWith(seats: (state.seats + e.delta).clamp(1, maxSeats)));
+      },
     );
     on<CarpoolOfferPriceChanged>((e, emit) {
       final base = state.pricePerSeat ?? e.currentBasePrice ?? 100;
@@ -529,6 +587,18 @@ class CarpoolOfferRideBloc
     );
     on<CarpoolOfferVehicleChanged>((e, emit) {
       emit(state.copyWith(vehicleModel: e.model, vehicleNumber: e.number));
+    });
+    on<CarpoolOfferNegotiationToggled>((e, emit) {
+      emit(state.copyWith(enableNegotiation: e.value));
+    });
+    on<CarpoolOfferMaxTwoInRearToggled>((e, emit) {
+      emit(state.copyWith(maxTwoInRear: e.value));
+    });
+    on<CarpoolOfferLadiesOnlyToggled>((e, emit) {
+      emit(state.copyWith(ladiesOnlyFilter: e.value));
+    });
+    on<CarpoolOfferInstantBookingToggled>((e, emit) {
+      emit(state.copyWith(instantBookingDefault: e.value));
     });
     on<CarpoolOfferPublishPressed>(_onPublish);
     on<CarpoolOfferStopoverToggled>((e, emit) {
@@ -1481,6 +1551,10 @@ class CarpoolOfferRideBloc
           tollType: effectiveTollType,
           stopover: serializedStopovers,
           tollRoute: effectiveTollRoute,
+          enableNegotiation: state.enableNegotiation,
+          maxTwoInRear: state.maxTwoInRear,
+          ladiesOnly: state.ladiesOnlyFilter,
+          instantBooking: state.instantBookingDefault,
         ),
       );
       // Clear temporary saved data after running publish API

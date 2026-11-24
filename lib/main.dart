@@ -31,6 +31,11 @@ import 'features/dashboard/data/repositories/dashboard_repository_impl.dart';
 import 'features/dashboard/domain/usecases/get_dashboard_data_usecase.dart';
 import 'features/dashboard/presentation/bloc/dashboard_bloc.dart';
 import 'features/dashboard/presentation/bloc/dashboard_event.dart';
+import 'features/carpool/data/datasources/carpool_settings_local_data_source.dart';
+import 'features/carpool/data/datasources/carpool_settings_remote_data_source.dart';
+import 'features/carpool/data/repositories/carpool_settings_repository_impl.dart';
+import 'features/carpool/domain/usecases/get_carpool_settings_usecase.dart';
+import 'features/carpool/presentation/bloc/carpool_settings_bloc.dart';
 import 'core/socket/socket.dart';
 
 void main() async {
@@ -52,6 +57,9 @@ void main() async {
   await storedLocal.init();
   final initialUser = await storedLocal.getUser();
 
+  // Initialize cached Carpool Settings from SharedPreferences
+  await CarpoolSettingsLocalDataSource().init();
+
   // Initialize and connect socket service
   SocketService().connect();
 
@@ -61,6 +69,7 @@ void main() async {
 class PathwayApp extends StatefulWidget {
   final AuthBloc? authBloc;
   final DashboardBloc? dashboardBloc;
+  final CarpoolSettingsBloc? carpoolSettingsBloc;
   final UserProfile? initialUser;
   final StoredLocal? storedLocal;
 
@@ -68,6 +77,7 @@ class PathwayApp extends StatefulWidget {
     super.key,
     this.authBloc,
     this.dashboardBloc,
+    this.carpoolSettingsBloc,
     this.initialUser,
     this.storedLocal,
   });
@@ -79,6 +89,7 @@ class PathwayApp extends StatefulWidget {
 class _PathwayAppState extends State<PathwayApp> {
   late final AuthBloc _authBloc;
   late final DashboardBloc _dashboardBloc;
+  late final CarpoolSettingsBloc _carpoolSettingsBloc;
   late final GoRouter _router;
 
   @override
@@ -125,6 +136,22 @@ class _PathwayAppState extends State<PathwayApp> {
           getDashboardDataUseCase: getDashboardDataUseCase,
         )..add(const LoadDashboardDataEvent()));
 
+    // Carpool Settings Clean Architecture setup & fetch on app launch
+    final carpoolSettingsLocal = CarpoolSettingsLocalDataSource();
+    final carpoolSettingsRemote = CarpoolSettingsRemoteDataSourceImpl();
+    final carpoolSettingsRepo = CarpoolSettingsRepositoryImpl(
+      remoteDataSource: carpoolSettingsRemote,
+      localDataSource: carpoolSettingsLocal,
+    );
+    final getCarpoolSettingsUseCase =
+        GetCarpoolSettingsUseCase(carpoolSettingsRepo);
+
+    _carpoolSettingsBloc = widget.carpoolSettingsBloc ??
+        (CarpoolSettingsBloc(
+          getCarpoolSettingsUseCase: getCarpoolSettingsUseCase,
+          localDataSource: carpoolSettingsLocal,
+        )..add(const FetchCarpoolSettingsEvent()));
+
     _router = AppRouter.createRouter(_authBloc);
   }
 
@@ -136,6 +163,9 @@ class _PathwayAppState extends State<PathwayApp> {
     if (widget.dashboardBloc == null) {
       _dashboardBloc.close();
     }
+    if (widget.carpoolSettingsBloc == null) {
+      _carpoolSettingsBloc.close();
+    }
     _router.dispose();
     super.dispose();
   }
@@ -146,6 +176,7 @@ class _PathwayAppState extends State<PathwayApp> {
       providers: [
         BlocProvider<AuthBloc>.value(value: _authBloc),
         BlocProvider<DashboardBloc>.value(value: _dashboardBloc),
+        BlocProvider<CarpoolSettingsBloc>.value(value: _carpoolSettingsBloc),
       ],
       child: MaterialApp.router(
         title: 'Pathway',

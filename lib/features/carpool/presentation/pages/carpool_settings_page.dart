@@ -1,47 +1,37 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
-import '../../data/datasources/carpool_mock_data_source.dart';
-import '../../data/repositories/carpool_repository_impl.dart';
-import '../../domain/usecases/carpool_usecases.dart';
+import '../../../../core/utils/carpool_status.dart';
+import '../../data/datasources/carpool_settings_local_data_source.dart';
+import '../../domain/entities/carpool_settings_entity.dart';
 import '../bloc/carpool_profile_bloc.dart';
+import '../bloc/carpool_settings_bloc.dart';
 
-/// CarpoolSettingsPage - Matches screenshot design:
-/// 1. Lavender gradient background.
-/// 2. Top bar: Back arrow, "Settings" title, right tune/filter icon.
-/// 3. Unified white settings card:
-///    - Notification Settings (toggle switch)
-///    - Language (English)
-///    - Theme (Light / Dark)
-///    - Privacy & Security
-///    - Help & Support
-///    - About RideMax
-/// 4. Cosmic "Upgrade to Premium" banner with 3D gold crown & "Go Premium →" button.
+/// Clean Architecture Carpool Settings Screen.
+/// Dynamically connects to CarpoolSettingsBloc (and /api/settings/carpool)
+/// to display active Safety Advisories, Cancellation Policy, Fare Limits, and Preferences.
 class CarpoolSettingsPage extends StatelessWidget {
-  final CarpoolProfileBloc? bloc;
+  final CarpoolSettingsBloc? settingsBloc;
+  final CarpoolProfileBloc? profileBloc;
 
-  const CarpoolSettingsPage({super.key, this.bloc});
+  const CarpoolSettingsPage({
+    super.key,
+    this.settingsBloc,
+    this.profileBloc,
+  });
 
   @override
   Widget build(BuildContext context) {
-    if (bloc != null) {
-      return BlocProvider.value(
-        value: bloc!,
-        child: const _SettingsView(),
-      );
+    Widget content = const _SettingsView();
+
+    if (profileBloc != null) {
+      content = BlocProvider.value(value: profileBloc!, child: content);
     }
-    try {
-      context.read<CarpoolProfileBloc>();
-      return const _SettingsView();
-    } catch (_) {
-      final repo = CarpoolRepositoryImpl(CarpoolMockDataSource());
-      return BlocProvider(
-        create: (_) => CarpoolProfileBloc(
-          getUser: CarpoolGetUserUseCase(repo),
-        )..add(const CarpoolProfileStarted()),
-        child: const _SettingsView(),
-      );
+    if (settingsBloc != null) {
+      content = BlocProvider.value(value: settingsBloc!, child: content);
     }
+
+    return content;
   }
 }
 
@@ -51,7 +41,7 @@ class _SettingsView extends StatelessWidget {
   void _snack(BuildContext c, String name) {
     ScaffoldMessenger.of(c).showSnackBar(
       SnackBar(
-        content: Text('$name is coming soon'),
+        content: Text('$name is up to date'),
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
         duration: const Duration(seconds: 1),
@@ -61,6 +51,22 @@ class _SettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Clean Architecture with BLoC: Retrieve dynamic settings from CarpoolSettingsBloc
+    CarpoolSettingsEntity settings = CarpoolSettingsStorage.current;
+    bool isLoading = false;
+
+    try {
+      final settingsState = context.watch<CarpoolSettingsBloc>().state;
+      isLoading = settingsState.status == CarpoolStatus.loading;
+      if (settingsState.settings.pricePerKm > 0 ||
+          settingsState.settings.safetyAdvisories.isNotEmpty ||
+          settingsState.settings.cancellationPolicy.isNotEmpty) {
+        settings = settingsState.settings;
+      }
+    } catch (_) {
+      settings = CarpoolSettingsStorage.current;
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Container(
@@ -78,290 +84,467 @@ class _SettingsView extends StatelessWidget {
         ),
         child: SafeArea(
           bottom: false,
-          child: BlocBuilder<CarpoolProfileBloc, CarpoolProfileState>(
-            builder: (context, s) {
-              return ListView(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-                children: [
-                  // 1. Top Bar: Back arrow, "Settings", right tune icon
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      children: [
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (Navigator.of(context).canPop()) {
-                              Navigator.of(context).pop();
-                            }
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            child: const Icon(
-                              Icons.arrow_back_rounded,
-                              color: Color(0xFF140D43),
-                              size: 26,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 14),
-                        const Text(
-                          'Settings',
-                          style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
+          child: RefreshIndicator(
+            color: const Color(0xFF5D24F7),
+            onRefresh: () async {
+              try {
+                context.read<CarpoolSettingsBloc>().add(
+                      const FetchCarpoolSettingsEvent(forceRefresh: true),
+                    );
+              } catch (_) {}
+            },
+            child: ListView(
+              physics: const AlwaysScrollableScrollPhysics(
+                parent: BouncingScrollPhysics(),
+              ),
+              padding: const EdgeInsets.fromLTRB(20, 8, 20, 30),
+              children: [
+                // ── 1. Top Navigation Bar ─────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () {
+                          if (Navigator.of(context).canPop()) {
+                            Navigator.of(context).pop();
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(4),
+                          child: const Icon(
+                            Icons.arrow_back_rounded,
                             color: Color(0xFF140D43),
-                            letterSpacing: -0.3,
+                            size: 26,
                           ),
                         ),
-                        const Spacer(),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => _snack(context, 'Settings filters'),
-                          child: Container(
-                            padding: const EdgeInsets.all(4),
-                            child: const Icon(
-                              Icons.tune_rounded,
-                              color: Color(0xFF140D43),
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  const SizedBox(height: 10),
-
-                  // 2. Unified White Settings Card
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                      border: Border.all(
-                        color: const Color(0xFFEDE8FF),
-                        width: 1.2,
                       ),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF5B3BF5).withOpacity(0.06),
-                          blurRadius: 16,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: Column(
-                        children: [
-                          // 1. Notification Settings
-                          _SettingsRow(
-                            icon: Icons.notifications_rounded,
-                            title: 'Notification Settings',
-                            subtitle: 'Manage notifications',
-                            trailing: _CustomPurpleSwitch(
-                              value: s.notificationsEnabled,
-                              onChanged: (v) => context
-                                  .read<CarpoolProfileBloc>()
-                                  .add(CarpoolProfileNotificationsToggled(v)),
-                            ),
-                          ),
-                          const _SettingsDivider(),
-
-                          // 2. Language
-                          _SettingsRow(
-                            icon: Icons.translate_rounded,
-                            title: 'Language',
-                            subtitle: 'English',
-                            onTap: () => _snack(context, 'Language'),
-                          ),
-                          const _SettingsDivider(),
-
-                          // 3. Theme
-                          _SettingsRow(
-                            icon: Icons.nightlight_round,
-                            title: 'Theme',
-                            subtitle: 'Light / Dark',
-                            onTap: () => _snack(context, 'Dark theme'),
-                          ),
-                          const _SettingsDivider(),
-
-                          // 4. Privacy & Security
-                          _SettingsRow(
-                            icon: Icons.shield_rounded,
-                            title: 'Privacy & Security',
-                            onTap: () => _snack(context, 'Privacy & Security'),
-                          ),
-                          const _SettingsDivider(),
-
-                          // 5. Help & Support
-                          _SettingsRow(
-                            icon: Icons.help_rounded,
-                            title: 'Help & Support',
-                            onTap: () => _snack(context, 'Help & Support'),
-                          ),
-                          const _SettingsDivider(),
-
-                          // 6. About RideMax
-                          _SettingsRow(
-                            icon: Icons.info_rounded,
-                            title: 'About RideMax',
-                            onTap: () => _snack(context, 'About RideMax'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // 3. Cosmic "Upgrade to Premium" Banner
-                  Container(
-                    height: 125,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [
-                          Color(0xFF4C1CDD),
-                          Color(0xFF24076C),
-                          Color(0xFF10033B),
-                        ],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(24),
-                      boxShadow: [
-                        BoxShadow(
-                          color: const Color(0xFF4C1CDD).withOpacity(0.35),
-                          blurRadius: 16,
-                          offset: const Offset(0, 8),
-                        ),
-                      ],
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(24),
-                      child: Stack(
-                        children: [
-                          // Warm sunset glow aura behind the crown on the left
-                          Positioned(
-                            left: -20,
-                            top: -15,
-                            child: Container(
-                              width: 140,
-                              height: 140,
-                              decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: const Color(0xFFFF9500).withOpacity(0.25),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              'Carpool Settings',
+                              style: TextStyle(
+                                fontSize: 21,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF140D43),
+                                letterSpacing: -0.3,
                               ),
                             ),
-                          ),
-
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 18,
-                              vertical: 16,
+                            SizedBox(height: 2),
+                            Text(
+                              'Official safety advisories & platform rules',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Color(0xFF6B658C),
+                              ),
                             ),
-                            child: Row(
-                              children: [
-                                // 3D Golden Crown Illustration
-                                const _CrownIllustration(),
-
-                                const SizedBox(width: 14),
-
-                                // Title, Subtitle & Go Premium Button
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.center,
-                                    children: [
-                                      const Text(
-                                        'Upgrade to Premium',
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontWeight: FontWeight.w800,
-                                          fontSize: 16,
-                                          letterSpacing: -0.2,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        'Get more benefits',
-                                        style: TextStyle(
-                                          color: Colors.white.withOpacity(0.85),
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      GestureDetector(
-                                        behavior: HitTestBehavior.opaque,
-                                        onTap: () =>
-                                            _snack(context, 'Premium upgrade'),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 18,
-                                            vertical: 7,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            gradient: const LinearGradient(
-                                              colors: [
-                                                Color(0xFFFFD568),
-                                                Color(0xFFFFB824),
-                                              ],
-                                              begin: Alignment.topLeft,
-                                              end: Alignment.bottomRight,
-                                            ),
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                            boxShadow: [
-                                              BoxShadow(
-                                                color: const Color(0xFFFFB824)
-                                                    .withOpacity(0.35),
-                                                blurRadius: 8,
-                                                offset: const Offset(0, 3),
-                                              ),
-                                            ],
-                                          ),
-                                          child: const Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: [
-                                              Text(
-                                                'Go Premium',
-                                                style: TextStyle(
-                                                  color: Color(0xFF140D43),
-                                                  fontWeight: FontWeight.w800,
-                                                  fontSize: 13.5,
-                                                ),
-                                              ),
-                                              SizedBox(width: 4),
-                                              Icon(
-                                                Icons.arrow_forward_rounded,
-                                                color: Color(0xFF140D43),
-                                                size: 15,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
+                      if (isLoading)
+                        const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Color(0xFF5D24F7),
+                          ),
+                        )
+                      else
+                        IconButton(
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: Color(0xFF5D24F7),
+                            size: 22,
+                          ),
+                          onPressed: () {
+                            try {
+                              context.read<CarpoolSettingsBloc>().add(
+                                    const FetchCarpoolSettingsEvent(
+                                      forceRefresh: true,
+                                    ),
+                                  );
+                            } catch (_) {}
+                          },
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 20,
+                        ),
+                    ],
                   ),
-                ],
-              );
-            },
+                ),
+
+                const SizedBox(height: 12),
+
+                // ── 2. DYNAMIC SAFETY ADVISORIES (From API Response) ───────
+                _buildSafetyAdvisoriesSection(context, settings.safetyAdvisories),
+
+                const SizedBox(height: 18),
+
+                // ── 3. GENERAL APP PREFERENCES ─────────────────────────────
+                _buildAppPreferencesCard(context),
+
+                const SizedBox(height: 20),
+              ],
+            ),
           ),
         ),
       ),
     );
   }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 1. DYNAMIC SAFETY ADVISORIES SECTION
+  // ════════════════════════════════════════════════════════════════════════════
+  Widget _buildSafetyAdvisoriesSection(
+    BuildContext context,
+    List<CarpoolSafetyAdvisoryEntity> advisories,
+  ) {
+    if (advisories.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: const Color(0xFFEDE8FF)),
+        ),
+        child: Row(
+          children: const [
+            Icon(Icons.shield_outlined, color: Color(0xFF10B981), size: 22),
+            SizedBox(width: 10),
+            Text(
+              'No active safety advisories currently reported.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFF6B658C),
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.security_rounded,
+                size: 15,
+                color: Color(0xFFDC2626),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text(
+              'Safety & Security Advisories',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF140D43),
+                letterSpacing: -0.2,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFFECACA)),
+              ),
+              child: Text(
+                '${advisories.length} Active Notice',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFFDC2626),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ...advisories.map((adv) => _buildSingleAdvisoryCard(context, adv)),
+      ],
+    );
+  }
+
+  Widget _buildSingleAdvisoryCard(
+    BuildContext context,
+    CarpoolSafetyAdvisoryEntity adv,
+  ) {
+    final bool isSecurity =
+        adv.severity.toLowerCase().contains('security') ||
+        adv.severity.toLowerCase().contains('warning') ||
+        adv.severity.toLowerCase().contains('danger');
+
+    final Color cardBg =
+        isSecurity ? const Color(0xFFFFFBEB) : const Color(0xFFF7F5FE);
+    final Color cardBorder =
+        isSecurity ? const Color(0xFFFDE68A) : const Color(0xFFEDE8FF);
+    final Color badgeBg =
+        isSecurity ? const Color(0xFFFEF3C7) : const Color(0xFFEDE8FF);
+    final Color badgeFg =
+        isSecurity ? const Color(0xFFB45309) : const Color(0xFF5D24F7);
+    final IconData badgeIcon =
+        isSecurity ? Icons.shield_rounded : Icons.info_outline_rounded;
+
+    final List<String> modules = adv.module;
+    final List<String> platforms = adv.platform;
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: cardBorder, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: (isSecurity ? const Color(0xFFF59E0B) : const Color(0xFF5D24F7))
+                .withOpacity(0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Header Row
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: badgeBg,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(badgeIcon, color: badgeFg, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      adv.title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: isSecurity
+                            ? const Color(0xFF78350F)
+                            : const Color(0xFF140D43),
+                        letterSpacing: -0.2,
+                      ),
+                    ),
+                    if (adv.id.isNotEmpty) ...[
+                      const SizedBox(height: 1),
+                      Text(
+                        'ID: ${adv.id}',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w600,
+                          color: isSecurity
+                              ? const Color(0xFF92400E).withOpacity(0.8)
+                              : const Color(0xFF8B85A8),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              if (adv.severity.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3.5,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: cardBorder),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.lock_outline_rounded, size: 10, color: badgeFg),
+                      const SizedBox(width: 3),
+                      Text(
+                        adv.severity.toUpperCase(),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          color: badgeFg,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+
+          const SizedBox(height: 10),
+
+          // Message Body
+          Text(
+            adv.message,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: isSecurity
+                  ? const Color(0xFF78350F).withOpacity(0.95)
+                  : const Color(0xFF4B4668),
+              height: 1.45,
+            ),
+          ),
+
+          // Line 1: Module (e.g. "carpool")
+          if (modules.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 6,
+              runSpacing: 5,
+              children: modules.map(
+                (m) => _buildMiniTag(
+                  label: m,
+                  icon: Icons.directions_car_rounded,
+                  bgColor: Colors.white,
+                  fgColor: const Color(0xFF059669),
+                  borderColor: const Color(0xFFA7F3D0),
+                ),
+              ).toList(),
+            ),
+          ],
+
+          // Line 2: Next line Wrap widget with platform texts ("checkout", "chat", "banner", "ticket")
+          if (platforms.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 5,
+              children: platforms.map(
+                (p) => _buildMiniTag(
+                  label: p,
+                  bgColor: Colors.white,
+                  fgColor: isSecurity
+                      ? const Color(0xFFB45309)
+                      : const Color(0xFF5D24F7),
+                  borderColor: cardBorder,
+                ),
+              ).toList(),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniTag({
+    required String label,
+    IconData? icon,
+    required Color bgColor,
+    required Color fgColor,
+    required Color borderColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor, width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 10, color: fgColor),
+            const SizedBox(width: 4),
+          ],
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: fgColor,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // 2. GENERAL APP PREFERENCES CARD
+  // ════════════════════════════════════════════════════════════════════════════
+  Widget _buildAppPreferencesCard(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: const Color(0xFFEDE8FF), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF5D24F7).withOpacity(0.04),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: Column(
+          children: [
+            _SettingsRow(
+              icon: Icons.notifications_rounded,
+              title: 'Notification Settings',
+              subtitle: 'Ride alerts & push messages',
+              trailing: const Icon(
+                Icons.chevron_right_rounded,
+                color: Color(0xFF8B85A8),
+                size: 20,
+              ),
+              onTap: () => _snack(context, 'Notifications'),
+            ),
+            const _SettingsDivider(),
+
+            _SettingsRow(
+              icon: Icons.translate_rounded,
+              title: 'Language',
+              subtitle: 'English (US)',
+              onTap: () => _snack(context, 'Language'),
+            ),
+            const _SettingsDivider(),
+
+            _SettingsRow(
+              icon: Icons.help_outline_rounded,
+              title: 'Help & Support',
+              subtitle: 'FAQs & dispute assistance',
+              onTap: () => _snack(context, 'Help & Support'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
 }
 
 class _SettingsRow extends StatelessWidget {
@@ -388,19 +571,16 @@ class _SettingsRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 13),
         child: Row(
           children: [
-            // Soft periwinkle circular icon badge
             Container(
-              width: 44,
-              height: 44,
+              width: 40,
+              height: 40,
               decoration: const BoxDecoration(
-                color: Color(0xFFEBE6FC),
+                color: Color(0xFFF3EFFF),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: const Color(0xFF3815D8), size: 22),
+              child: Icon(icon, color: const Color(0xFF5D24F7), size: 20),
             ),
-            const SizedBox(width: 14),
-
-            // Title & optional Subtitle
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -409,7 +589,7 @@ class _SettingsRow extends StatelessWidget {
                     title,
                     style: const TextStyle(
                       fontWeight: FontWeight.w800,
-                      fontSize: 15,
+                      fontSize: 14.5,
                       color: Color(0xFF140D43),
                       letterSpacing: -0.2,
                     ),
@@ -420,7 +600,7 @@ class _SettingsRow extends StatelessWidget {
                       subtitle!,
                       style: const TextStyle(
                         color: Color(0xFF6B658C),
-                        fontSize: 13,
+                        fontSize: 12,
                         fontWeight: FontWeight.w500,
                       ),
                     ),
@@ -428,13 +608,11 @@ class _SettingsRow extends StatelessWidget {
                 ],
               ),
             ),
-
-            // Trailing widget or default chevron arrow
             trailing ??
                 const Icon(
                   Icons.chevron_right_rounded,
-                  color: Color(0xFF6B658C),
-                  size: 22,
+                  color: Color(0xFF8B85A8),
+                  size: 20,
                 ),
           ],
         ),
@@ -454,124 +632,4 @@ class _SettingsDivider extends StatelessWidget {
       color: Color(0xFFF3F0FD),
     );
   }
-}
-
-/// Custom purple pill switch matching screenshot
-class _CustomPurpleSwitch extends StatelessWidget {
-  final bool value;
-  final ValueChanged<bool> onChanged;
-
-  const _CustomPurpleSwitch({
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => onChanged(!value),
-      behavior: HitTestBehavior.opaque,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        width: 50,
-        height: 28,
-        padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(14),
-          color: value ? const Color(0xFF2E12C8) : const Color(0xFFD1D5DB),
-        ),
-        child: AnimatedAlign(
-          duration: const Duration(milliseconds: 200),
-          alignment: value ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            width: 22,
-            height: 22,
-            decoration: const BoxDecoration(
-              shape: BoxShape.circle,
-              color: Colors.white,
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black26,
-                  blurRadius: 3,
-                  offset: Offset(0, 1),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-/// 3D Golden Crown Graphic matching screenshot
-class _CrownIllustration extends StatelessWidget {
-  const _CrownIllustration();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 68,
-      height: 54,
-      child: CustomPaint(
-        painter: _CrownPainter(),
-      ),
-    );
-  }
-}
-
-class _CrownPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = size.height;
-
-    // Golden gradient for the crown body
-    final crownPaint = Paint()
-      ..shader = const LinearGradient(
-        colors: [Color(0xFFFFD568), Color(0xFFFF9500), Color(0xFFE67E00)],
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-      ).createShader(Rect.fromLTWH(0, 0, w, h))
-      ..style = PaintingStyle.fill;
-
-    // Crown body path (5 tips)
-    final path = Path()
-      ..moveTo(w * 0.10, h * 0.35)
-      ..lineTo(w * 0.25, h * 0.55)
-      ..lineTo(w * 0.50, h * 0.18) // Center tall tip
-      ..lineTo(w * 0.75, h * 0.55)
-      ..lineTo(w * 0.90, h * 0.35)
-      ..lineTo(w * 0.82, h * 0.85) // Bottom right
-      ..lineTo(w * 0.18, h * 0.85) // Bottom left
-      ..close();
-
-    // Drop shadow
-    canvas.drawShadow(path, const Color(0xFFFFB800), 8, false);
-    canvas.drawPath(path, crownPaint);
-
-    // Bottom band
-    final bandPaint = Paint()
-      ..color = const Color(0xFFFFC043)
-      ..style = PaintingStyle.fill;
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(w * 0.16, h * 0.82, w * 0.68, h * 0.12),
-        const Radius.circular(3),
-      ),
-      bandPaint,
-    );
-
-    // Golden Jewels / Spheres on top of tips
-    final jewelPaint = Paint()
-      ..color = const Color(0xFFFFEAA7)
-      ..style = PaintingStyle.fill;
-
-    canvas.drawCircle(Offset(w * 0.10, h * 0.35), 4, jewelPaint);
-    canvas.drawCircle(Offset(w * 0.50, h * 0.18), 5.5, jewelPaint);
-    canvas.drawCircle(Offset(w * 0.90, h * 0.35), 4, jewelPaint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

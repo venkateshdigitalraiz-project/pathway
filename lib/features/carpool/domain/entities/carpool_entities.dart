@@ -266,6 +266,10 @@ class CarpoolPublishRideParams extends Equatable {
     this.tollType,
     this.stopover,
     this.tollRoute,
+    this.enableNegotiation,
+    this.maxTwoInRear,
+    this.ladiesOnly,
+    this.instantBooking,
   });
 
   final String from;
@@ -295,6 +299,10 @@ class CarpoolPublishRideParams extends Equatable {
   final String? tollType;
   final List<Map<String, dynamic>>? stopover;
   final Map<String, dynamic>? tollRoute;
+  final bool? enableNegotiation;
+  final bool? maxTwoInRear;
+  final bool? ladiesOnly;
+  final bool? instantBooking;
 
   Map<String, dynamic> toJson() {
     final resolvedOrigin = origin ?? from;
@@ -384,6 +392,10 @@ class CarpoolPublishRideParams extends Equatable {
       'toll_type': effectiveTollType,
       'stopover': stopover ?? const <Map<String, dynamic>>[],
       'toll_route': effectiveTollRoute,
+      if (enableNegotiation != null) 'enableNegotiation': enableNegotiation,
+      if (maxTwoInRear != null) 'maxTwoInRear': maxTwoInRear,
+      if (ladiesOnly != null) 'ladiesOnly': ladiesOnly,
+      if (instantBooking != null) 'instantBooking': instantBooking,
     };
   }
 

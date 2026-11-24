@@ -450,12 +450,9 @@ class _SearchBookingRiderView extends StatelessWidget {
       separatorBuilder: (_, __) => const SizedBox(height: 14),
       itemBuilder: (context, index) {
         final ride = state.searchResults[index];
-        final isBookingThis = state.bookingRideId == ride.id;
 
         return _RideCard(
           ride: ride,
-          isBooking: isBookingThis,
-          onBook: () => _showBookingDialog(context, ride),
           onTap: () async {
             final booked = await SearchBookingDetailsPage.show(
               context,
@@ -470,226 +467,16 @@ class _SearchBookingRiderView extends StatelessWidget {
       },
     );
   }
-
-  Future<void> _showBookingDialog(
-    BuildContext context,
-    CarpoolRideEntity ride,
-  ) async {
-    int selectedSeats = 1;
-    final maxSeats = ride.seats > 0 ? ride.seats : 1;
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setDialogState) => AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-          ),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEDE8FF),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.airline_seat_recline_normal_rounded,
-                  color: Color(0xFF5D24F7),
-                  size: 22,
-                ),
-              ),
-              const SizedBox(width: 12),
-              const Expanded(
-                child: Text(
-                  'Confirm Seat Booking',
-                  style: TextStyle(
-                    color: Color(0xFF140D43),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '${ride.from} → ${ride.to}',
-                style: const TextStyle(
-                  color: Color(0xFF140D43),
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14.5,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                CarpoolFormatters.headline(ride.departure),
-                style: const TextStyle(
-                  color: Color(0xFF5D24F7),
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13,
-                ),
-              ),
-              if (ride.estimatedDuration.isNotEmpty ||
-                  ride.displayDistance.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Text(
-                  (ride.estimatedDuration.isNotEmpty &&
-                          ride.displayDistance.isNotEmpty)
-                      ? '${ride.estimatedDuration} • ${ride.displayDistance}'
-                      : (ride.estimatedDuration.isNotEmpty
-                          ? ride.estimatedDuration
-                          : ride.displayDistance),
-                  style: const TextStyle(
-                    color: Color(0xFF1A73E8),
-                    fontWeight: FontWeight.w600,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 14),
-
-              // Seats selector
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text(
-                    'Seats to Book',
-                    style: TextStyle(
-                      fontSize: 13.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF140D43),
-                    ),
-                  ),
-                  Container(
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF7F5FE),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: const Color(0xFFDDD6FE)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.remove_rounded, size: 18),
-                          color: const Color(0xFF5D24F7),
-                          onPressed: selectedSeats > 1
-                              ? () => setDialogState(() => selectedSeats--)
-                              : null,
-                        ),
-                        Text(
-                          '$selectedSeats',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF140D43),
-                          ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_rounded, size: 18),
-                          color: const Color(0xFF5D24F7),
-                          onPressed: selectedSeats < maxSeats
-                              ? () => setDialogState(() => selectedSeats++)
-                              : null,
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9F8FE),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFFEDE8FF)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      '$selectedSeats seat(s) × ₹${ride.pricePerSeat}',
-                      style: const TextStyle(
-                        color: Color(0xFF6B658C),
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    Text(
-                      CarpoolFormatters.rupee(ride.pricePerSeat * selectedSeats),
-                      style: const TextStyle(
-                        color: Color(0xFF5D24F7),
-                        fontSize: 16.5,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text(
-                'Cancel',
-                style: TextStyle(color: Color(0xFF6B658C)),
-              ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF5D24F7),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 10,
-                ),
-              ),
-              onPressed: () => Navigator.pop(ctx, true),
-              child: const Text(
-                'Book Now',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-
-    if (confirmed == true && context.mounted) {
-      context.read<SearchBookingRiderBloc>().add(
-        SearchBookingRiderBookSeatRequested(
-          ride: ride,
-          seats: selectedSeats,
-        ),
-      );
-    }
-  }
 }
 
 /// Tailored, uncluttered Ride Card that presents only relevant information
 /// strictly derived from the backend response.
 class _RideCard extends StatelessWidget {
   final CarpoolRideEntity ride;
-  final bool isBooking;
-  final VoidCallback onBook;
   final VoidCallback onTap;
 
   const _RideCard({
     required this.ride,
-    required this.isBooking,
-    required this.onBook,
     required this.onTap,
   });
 
@@ -1087,52 +874,6 @@ class _RideCard extends StatelessWidget {
                     ),
                   ),
                 ],
-
-                const SizedBox(height: 14),
-
-                // Action: "Book Seat" button
-                SizedBox(
-                  width: double.infinity,
-                  height: 44,
-                  child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF5D24F7),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14),
-                      ),
-                      elevation: 0,
-                    ),
-                    onPressed: isBooking ? null : onBook,
-                    child: isBooking
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.2,
-                              color: Colors.white,
-                            ),
-                          )
-                        : const Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                'Book Seat',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              SizedBox(width: 6),
-                              Icon(
-                                Icons.arrow_forward_rounded,
-                                size: 16,
-                                color: Colors.white,
-                              ),
-                            ],
-                          ),
-                  ),
-                ),
               ],
             ),
           ),

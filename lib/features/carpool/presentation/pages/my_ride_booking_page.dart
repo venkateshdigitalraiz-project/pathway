@@ -7,6 +7,9 @@ import '../../data/repositories/my_ride_booking_repository_impl.dart';
 import '../../domain/entities/rider_booking_entity.dart';
 import '../../domain/usecases/cancel_my_ride_booking_usecase.dart';
 import '../../domain/usecases/get_my_ride_bookings_usecase.dart';
+import '../../data/datasources/carpool_settings_local_data_source.dart';
+import '../../domain/entities/carpool_settings_entity.dart';
+import '../bloc/carpool_settings_bloc.dart';
 import '../bloc/my_ride_booking_bloc.dart';
 import 'search_booking_rider_page.dart';
 
@@ -66,86 +69,468 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
     final bloc = context.read<MyRideBookingBloc>();
     final reasonCtrl = TextEditingController();
 
+    // Clean Architecture with BLoC: Retrieve settings from CarpoolSettingsBloc with fallback
+    CarpoolSettingsEntity settings = CarpoolSettingsStorage.current;
+    try {
+      final blocState = context.read<CarpoolSettingsBloc>().state;
+      if (blocState.settings.cancellationPolicy.isNotEmpty ||
+          blocState.settings.pricePerKm > 0) {
+        settings = blocState.settings;
+      }
+    } catch (_) {}
+
+    // Check cancellationPolicy from API response ("tiered" vs "flexible")
+    final String policy = settings.cancellationPolicy.trim().toLowerCase();
+    final bool isFlexible = policy == 'flexible';
+    final String policyTitle = isFlexible
+        ? 'Flexible'
+        : (policy.isNotEmpty
+              ? '${policy[0].toUpperCase()}${policy.substring(1)}'
+              : 'Tiered');
+
+    final int freeHours = settings.passengerCancelFreeHours;
+    final int midHours = settings.passengerCancelMidHours;
+    final int midRefundPercent = settings.passengerCancelMidRefundPercent;
+    final int lastMinuteRefundPercent =
+        settings.passengerCancelLastMinuteRefundPercent;
+
+    final double hoursUntilDeparture =
+        booking.departure.difference(DateTime.now()).inMinutes / 60.0;
+
+    // Follow refund condition strictly from response based on cancellationPolicy
+    final int refundPercent;
+    final String alertDescription;
+
+    if (isFlexible) {
+      // In "flexible" cancellation policy:
+      // Passenger receives 100% full refund before ride departure (or >= midHours)
+      if (hoursUntilDeparture >= midHours || hoursUntilDeparture > 0) {
+        refundPercent = 100;
+        alertDescription =
+            'Under the Flexible cancellation policy, you are eligible for a 100% full refund before departure.';
+      } else {
+        refundPercent = lastMinuteRefundPercent;
+        alertDescription =
+            'Under the Flexible cancellation policy, last-minute cancellation is subject to a $lastMinuteRefundPercent% refund.';
+      }
+    } else {
+      // In "tiered" cancellation policy:
+      // - >= freeHours (e.g. 24h): 100% refund
+      // - >= midHours (e.g. 2h): midRefundPercent (e.g. 10%)
+      // - < midHours (e.g. < 2h): lastMinuteRefundPercent (e.g. 0%)
+      if (hoursUntilDeparture >= freeHours) {
+        refundPercent = 100;
+        alertDescription =
+            'Cancelling more than $freeHours hours before departure qualifies for a 100% full refund (Free Cancellation).';
+      } else if (hoursUntilDeparture >= midHours) {
+        refundPercent = midRefundPercent;
+        alertDescription =
+            'Cancelling between $midHours and $freeHours hours before departure qualifies for a $midRefundPercent% refund (${100 - midRefundPercent}% cancellation fee).';
+      } else {
+        refundPercent = lastMinuteRefundPercent;
+        alertDescription =
+            'Cancelling less than $midHours hours before departure qualifies for a $lastMinuteRefundPercent% refund (${100 - lastMinuteRefundPercent}% cancellation fee).';
+      }
+    }
+
+    final int totalFare = booking.totalAmount;
+    final int refundAmount = (totalFare * (refundPercent / 100.0)).round();
+    final int returnCharge = totalFare - refundAmount;
+
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        title: const Text(
-          'Cancel This Booking?',
-          style: TextStyle(
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF140D43),
-            fontSize: 18,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 24),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 440),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF140D43).withOpacity(0.14),
+                blurRadius: 30,
+                offset: const Offset(0, 10),
+              ),
+            ],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header Row with Icon, Title, and Dismiss Button
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: refundPercent == 100
+                                ? const Color(0xFFDCFCE7)
+                                : const Color(0xFFFEE2E2),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: Icon(
+                            refundPercent == 100
+                                ? Icons.verified_user_outlined
+                                : Icons.warning_amber_rounded,
+                            color: refundPercent == 100
+                                ? const Color(0xFF15803D)
+                                : const Color(0xFFDC2626),
+                            size: 24,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Cancel Ride Booking',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF140D43),
+                                  fontSize: 18,
+                                  letterSpacing: -0.3,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                '$policyTitle Policy • ${booking.driverName}',
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF6B658C),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(
+                            Icons.close_rounded,
+                            color: Color(0xFF8B85A8),
+                            size: 20,
+                          ),
+                          onPressed: () => Navigator.pop(ctx, false),
+                          visualDensity: VisualDensity.compact,
+                          splashRadius: 18,
+                        ),
+                      ],
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // Mini Trip Route Summary Box
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 9,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9F8FE),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFEDE8FF)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.route_rounded,
+                            size: 15,
+                            color: Color(0xFF5D24F7),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${booking.from} → ${booking.to}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF140D43),
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 2.5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEDE8FF),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              '${booking.seatsBooked} Seat(s)',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF5D24F7),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Policy Guarantee Card (Identical layout to attached design)
+                    CarpoolCancellationGuaranteeCard(
+                      title: isFlexible
+                          ? 'Flexible Cancellation Guarantee'
+                          : 'Tiered Cancellation Policy',
+                      subtitle: alertDescription,
+                      badgeText: '$refundPercent% Refund',
+                      refundPercent: refundPercent,
+                      icon: Icons.privacy_tip_outlined,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Dynamic Fare & Refund Breakdown Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFAF9FE),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: const Color(0xFFEDE8FF)),
+                      ),
+                      child: Column(
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              const Text(
+                                'Original Booking Fare',
+                                style: TextStyle(
+                                  fontSize: 12.5,
+                                  color: Color(0xFF6B658C),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                '₹$totalFare',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF140D43),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Cancellation Fee (${100 - refundPercent}%)',
+                                style: const TextStyle(
+                                  fontSize: 12.5,
+                                  color: Color(0xFF6B658C),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                              Text(
+                                returnCharge > 0
+                                    ? '-₹$returnCharge'
+                                    : '₹0 (Free)',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                  color: returnCharge > 0
+                                      ? const Color(0xFFDC2626)
+                                      : const Color(0xFF15803D),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Divider(
+                              height: 1,
+                              thickness: 1,
+                              color: Color(0xFFEDE8FF),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: refundPercent == 100
+                                  ? const Color(0xFFDCFCE7).withOpacity(0.4)
+                                  : (refundPercent > 0
+                                        ? const Color(
+                                            0xFFFEF3C7,
+                                          ).withOpacity(0.4)
+                                        : const Color(
+                                            0xFFFEE2E2,
+                                          ).withOpacity(0.4)),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Refundable Amount',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF140D43),
+                                      ),
+                                    ),
+                                    Text(
+                                      '$refundPercent% of total fare',
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        color: Color(0xFF6B658C),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  '₹$refundAmount',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w900,
+                                    color: refundPercent == 100
+                                        ? const Color(0xFF15803D)
+                                        : (refundPercent > 0
+                                              ? const Color(0xFFB45309)
+                                              : const Color(0xFFDC2626)),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Optional Cancellation Reason Field
+                    TextField(
+                      controller: reasonCtrl,
+                      decoration: InputDecoration(
+                        prefixIcon: const Icon(
+                          Icons.edit_note_rounded,
+                          color: Color(0xFF8B85A8),
+                          size: 20,
+                        ),
+                        hintText: 'Reason for cancellation (optional)',
+                        hintStyle: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF9E98BD),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFFF9F8FE),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 11,
+                        ),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFEDE8FF),
+                          ),
+                        ),
+                        enabledBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFFEDE8FF),
+                          ),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          borderSide: const BorderSide(
+                            color: Color(0xFF5D24F7),
+                            width: 1.5,
+                          ),
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 18),
+
+                    // Modern Side-by-Side Action Buttons
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Color(0xFFDDD6FE)),
+                              backgroundColor: const Color(0xFFF9F8FE),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                            ),
+                            onPressed: () => Navigator.pop(ctx, false),
+                            child: const Text(
+                              'Keep Booking',
+                              style: TextStyle(
+                                color: Color(0xFF5D24F7),
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: ElevatedButton(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFFDC2626),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(14),
+                              ),
+                              padding: const EdgeInsets.symmetric(vertical: 13),
+                              elevation: 0,
+                            ),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: const Text(
+                              'Yes, Cancel',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ),
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 14),
-            TextField(
-              controller: reasonCtrl,
-              decoration: InputDecoration(
-                hintText: 'Cancellation reason (optional)',
-                hintStyle: const TextStyle(
-                  fontSize: 12.5,
-                  color: Color(0xFF9E98BD),
-                ),
-                filled: true,
-                fillColor: const Color(0xFFF9F8FE),
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 10,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFEDE8FF)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFEDE8FF)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(
-                    color: Color(0xFF5D24F7),
-                    width: 1.5,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text(
-              'Keep Booking',
-              style: TextStyle(
-                color: Color(0xFF6B658C),
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFEF4444),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 0,
-            ),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text(
-              'Yes, Cancel',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
       ),
     );
 
@@ -164,6 +549,18 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
     BuildContext context,
     RiderBookingEntity booking,
   ) {
+    CarpoolSettingsEntity settings = CarpoolSettingsStorage.current;
+    try {
+      final blocState = context.read<CarpoolSettingsBloc>().state;
+      if (blocState.settings.cancellationPolicy.isNotEmpty ||
+          blocState.settings.driverCancelRefundPercent > 0) {
+        settings = blocState.settings;
+      }
+    } catch (_) {}
+    final int driverRefund = settings.driverCancelRefundPercent > 0
+        ? settings.driverCancelRefundPercent
+        : 100;
+
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -367,7 +764,9 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                                     color: Color(0xFF140D43),
                                   ),
                                 ),
-                                if (booking.displayVehicleNumber.isNotEmpty) ...[
+                                if (booking
+                                    .displayVehicleNumber
+                                    .isNotEmpty) ...[
                                   const SizedBox(width: 6),
                                   Container(
                                     padding: const EdgeInsets.symmetric(
@@ -571,30 +970,93 @@ class _MyRideBookingViewState extends State<_MyRideBookingView> {
                 ),
               ],
 
-              const SizedBox(height: 20),
+              // Driver-Fault Cancellation Guarantee Card (Identical to design in attached image)
+              const SizedBox(height: 14),
 
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF5D24F7),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(16),
+              CarpoolCancellationGuaranteeCard(
+                title: 'Driver-Fault Cancellation Guarantee',
+                subtitle:
+                    'When a driver cancels, passenger gets $driverRefund% full refund automatically.',
+                badgeText: '$driverRefund% Refund',
+                refundPercent: driverRefund,
+                icon: Icons.privacy_tip_outlined,
+              ),
+
+              const SizedBox(height: 20),
+              if (booking.status == RiderBookingStatus.confirmed) ...[
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          side: const BorderSide(color: Color(0xFFFCA5A5)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          _confirmCancel(context, booking);
+                        },
+                        child: const Text(
+                          'Cancel Booking',
+                          style: TextStyle(
+                            color: Color(0xFFDC2626),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     ),
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    elevation: 0,
-                  ),
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text(
-                    'Done',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF5D24F7),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          elevation: 0,
+                        ),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: const Text(
+                          'Done',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ] else ...[
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFF5D24F7),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      elevation: 0,
+                    ),
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text(
+                      'Done',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ],
           ),
         ),
@@ -1418,7 +1880,9 @@ class _MyRideBookingItemCard extends StatelessWidget {
                               ),
                               boxShadow: [
                                 BoxShadow(
-                                  color: const Color(0xFF5D24F7).withOpacity(0.04),
+                                  color: const Color(
+                                    0xFF5D24F7,
+                                  ).withOpacity(0.04),
                                   blurRadius: 4,
                                   offset: const Offset(0, 1),
                                 ),
@@ -1506,8 +1970,6 @@ class _MyRideBookingItemCard extends StatelessWidget {
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 10),
 
                 // Date & Time + Action Buttons
                 Row(
@@ -1667,8 +2129,8 @@ class _MyRideBookingItemCard extends StatelessWidget {
                               size: 11,
                               color:
                                   booking.status == RiderBookingStatus.completed
-                                      ? const Color(0xFF2563EB)
-                                      : const Color(0xFFDC2626),
+                                  ? const Color(0xFF2563EB)
+                                  : const Color(0xFFDC2626),
                             ),
                             const SizedBox(width: 4),
                             Text(
@@ -1680,9 +2142,9 @@ class _MyRideBookingItemCard extends StatelessWidget {
                                 fontWeight: FontWeight.w700,
                                 color:
                                     booking.status ==
-                                            RiderBookingStatus.completed
-                                        ? const Color(0xFF2563EB)
-                                        : const Color(0xFFDC2626),
+                                        RiderBookingStatus.completed
+                                    ? const Color(0xFF2563EB)
+                                    : const Color(0xFFDC2626),
                               ),
                             ),
                           ],
@@ -1742,6 +2204,117 @@ class _MyRideBookingItemCard extends StatelessWidget {
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
               color: fg,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Dynamic Cancellation Guarantee Card matching attached visual design
+class CarpoolCancellationGuaranteeCard extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final String badgeText;
+  final IconData icon;
+  final EdgeInsetsGeometry? padding;
+  final int? refundPercent;
+
+  const CarpoolCancellationGuaranteeCard({
+    super.key,
+    this.title = 'Driver-Fault Cancellation Guarantee',
+    this.subtitle =
+        'When a driver cancels, passenger gets 100% full refund automatically.',
+    this.badgeText = '100% Refund',
+    this.icon = Icons.privacy_tip_outlined,
+    this.padding,
+    this.refundPercent,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final int percent =
+        refundPercent ??
+        int.tryParse(badgeText.replaceAll(RegExp(r'[^0-9]'), '')) ??
+        100;
+
+    final bool isFull = percent >= 100;
+    final bool isZero = percent == 0;
+
+    final Color badgeBg = isZero
+        ? const Color(0xFFFEF2F2)
+        : (isFull ? Colors.white : const Color(0xFFFFFBEB));
+    final Color badgeBorder = isZero
+        ? const Color(0xFFFECACA)
+        : (isFull ? const Color(0xFFDDD6FE) : const Color(0xFFFDE68A));
+    final Color badgeFg = isZero
+        ? const Color(0xFFDC2626)
+        : (isFull ? const Color(0xFF6D28D9) : const Color(0xFFD97706));
+
+    return Container(
+      width: double.infinity,
+      padding: padding ?? const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F0FE),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFECE7FE), width: 1.0),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          // Left: Shield Icon directly matching attached image
+          Icon(icon, color: const Color(0xFF7C3AED), size: 24),
+          const SizedBox(width: 12),
+
+          // Center: Title & Subtitle
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1E293B),
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w400,
+                      color: Color(0xFF64748B),
+                      height: 1.25,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+
+          // Right: Pill Badge with clean white background and rounded border
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7.5),
+            decoration: BoxDecoration(
+              color: badgeBg,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: badgeBorder, width: 1.2),
+            ),
+            child: Text(
+              badgeText,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w700,
+                color: badgeFg,
+                letterSpacing: -0.1,
+              ),
             ),
           ),
         ],

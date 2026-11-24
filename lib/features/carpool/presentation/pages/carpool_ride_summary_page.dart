@@ -8,14 +8,17 @@ import 'package:pathway/core/utils/carpool_status.dart';
 import 'package:pathway/features/carpool/presentation/widgets/carpool_route_selector_card.dart';
 
 import '../../data/datasources/carpool_mock_data_source.dart';
+import '../../data/datasources/carpool_settings_local_data_source.dart';
 import '../../data/repositories/carpool_repository_impl.dart';
 import '../../domain/entities/carpool_place_entity.dart';
 import '../../domain/entities/carpool_pricing_entity.dart';
+import '../../domain/entities/carpool_settings_entity.dart';
 import '../../domain/entities/carpool_stopover_entity.dart';
 import '../../domain/entities/carpool_temporary_ride_data.dart';
 import '../../domain/usecases/carpool_usecases.dart';
 import '../bloc/carpool_location_picker_bloc.dart';
 import '../bloc/carpool_offer_ride_bloc.dart';
+import '../bloc/carpool_settings_bloc.dart';
 import '../widgets/real_google_map_preview.dart';
 import 'carpool_blabla_location_picker_page.dart';
 import 'carpool_ride_published_page.dart';
@@ -179,7 +182,8 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
           fromLng: s.fromLng,
           toLat: s.toLat,
           toLng: s.toLng,
-          hasSelectedRoute: effectiveRoute != null ||
+          hasSelectedRoute:
+              effectiveRoute != null ||
               CarpoolTemporaryRideData.instance.totalDistance != null,
         );
 
@@ -233,61 +237,102 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
 
         final orderedStops = orderedStopoverObjects.map((o) => o.name).toList();
         if (orderedStopoverObjects.isNotEmpty) {
-          CarpoolTemporaryRideData.instance.saveStopoverHalts(orderedStopoverObjects);
+          CarpoolTemporaryRideData.instance.saveStopoverHalts(
+            orderedStopoverObjects,
+          );
+        }
+
+        // Clean Architecture: Dynamic Carpool Settings via BLoC with local fallback
+        CarpoolSettingsEntity dynamicSettings = CarpoolSettingsStorage.current;
+        try {
+          final settingsBlocState = context.watch<CarpoolSettingsBloc>().state;
+          if (settingsBlocState.settings.pricePerKm > 0 ||
+              settingsBlocState.settings.enableNegotiation ||
+              settingsBlocState.settings.ladiesOnlyFilter ||
+              settingsBlocState.settings.maxTwoInRear ||
+              settingsBlocState.settings.instantBookingDefault) {
+            dynamicSettings = settingsBlocState.settings;
+          }
+        } catch (_) {
+          dynamicSettings = CarpoolSettingsStorage.current;
         }
 
         // Pricing logic using dynamic API calculation when available
         final pricing = s.pricingCalculation ?? widget.pricing;
-        final double ratePerKm = pricing?.ratePerKm ?? 3.5;
+        final double dynamicRate = dynamicSettings.pricePerKm;
+        final double ratePerKm =
+            pricing?.ratePerKm ?? (dynamicRate > 0 ? dynamicRate : 2.12);
 
         // Total distance strictly preserves WhereIsTheRoutePage user selection
-        final double distanceKmDouble = (CarpoolTemporaryRideData.instance.totalDistance != null &&
+        final double distanceKmDouble =
+            (CarpoolTemporaryRideData.instance.totalDistance != null &&
                 CarpoolTemporaryRideData.instance.totalDistance! > 0)
             ? CarpoolTemporaryRideData.instance.totalDistance!
             : ((effectiveRoute != null && effectiveRoute.distanceKm > 0)
-                ? effectiveRoute.distanceKm.toDouble()
-                : ((pricing?.distanceKm != null &&
-                          pricing!.distanceKm > 0 &&
-                          pricing.distanceKm <= 3800)
-                      ? pricing.distanceKm
-                      : ((_liveDistanceResult?.distanceKm != null &&
-                              _liveDistanceResult!.distanceKm > 0 &&
-                              _liveDistanceResult!.distanceKm <= 3800)
-                          ? _liveDistanceResult!.distanceKm.toDouble()
-                          : CarpoolDistanceCalculator.calculateDistanceKm(
-                              s.from,
-                              s.to,
-                              fromLat: s.fromLat,
-                              fromLng: s.fromLng,
-                              toLat: s.toLat,
-                              toLng: s.toLng,
-                            ).toDouble())));
+                  ? effectiveRoute.distanceKm.toDouble()
+                  : ((pricing?.distanceKm != null &&
+                            pricing!.distanceKm > 0 &&
+                            pricing.distanceKm <= 3800)
+                        ? pricing.distanceKm
+                        : ((_liveDistanceResult?.distanceKm != null &&
+                                  _liveDistanceResult!.distanceKm > 0 &&
+                                  _liveDistanceResult!.distanceKm <= 3800)
+                              ? _liveDistanceResult!.distanceKm.toDouble()
+                              : CarpoolDistanceCalculator.calculateDistanceKm(
+                                  s.from,
+                                  s.to,
+                                  fromLat: s.fromLat,
+                                  fromLng: s.fromLng,
+                                  toLat: s.toLat,
+                                  toLng: s.toLng,
+                                ).toDouble())));
 
         final int distanceKm = distanceKmDouble.round();
         final int suggestedPrice =
             pricing?.suggestedPrice ?? (distanceKm * ratePerKm).round();
+        final double minDevPercent =
+            dynamicSettings.minAllowedDeviationPercent > 0
+            ? dynamicSettings.minAllowedDeviationPercent.toDouble()
+            : 25.0;
+        final double maxDevPercent =
+            dynamicSettings.maxAllowedDeviationPercent > 0
+            ? dynamicSettings.maxAllowedDeviationPercent.toDouble()
+            : 30.0;
         final int minAllowedPrice =
-            pricing?.minAllowedPrice ?? (suggestedPrice * 0.75).round();
+            pricing?.minAllowedPrice ??
+            (suggestedPrice * (1.0 - (minDevPercent / 100.0))).round();
         final int maxAllowedPrice =
-            pricing?.maxAllowedPrice ?? (suggestedPrice * 1.30).round();
+            pricing?.maxAllowedPrice ??
+            (suggestedPrice * (1.0 + (maxDevPercent / 100.0))).round();
         final int calculatedPricePerSeat = suggestedPrice;
         final int effectivePricePerSeat =
             s.pricePerSeat ?? calculatedPricePerSeat;
-        final int seats = s.seats > 0 ? s.seats : 1;
+        final int maxAllowedSeats = dynamicSettings.maxSeatsPerRide > 0
+            ? dynamicSettings.maxSeatsPerRide
+            : 4;
+        final int seats = (s.seats > 0 ? s.seats : 1).clamp(1, maxAllowedSeats);
         final int effectiveTotalPrice = effectivePricePerSeat * seats;
         final int totalPrice = effectiveTotalPrice;
         final int pricePerSeat = effectivePricePerSeat;
 
         // Duration strictly preserves WhereIsTheRoutePage user selection
-        final String durationText = (CarpoolTemporaryRideData.instance.tollRoute?['duration'] != null &&
-                CarpoolTemporaryRideData.instance.tollRoute!['duration'].toString().trim().isNotEmpty)
-            ? CarpoolTemporaryRideData.instance.tollRoute!['duration'].toString().trim()
+        final String durationText =
+            (CarpoolTemporaryRideData.instance.tollRoute?['duration'] != null &&
+                CarpoolTemporaryRideData.instance.tollRoute!['duration']
+                    .toString()
+                    .trim()
+                    .isNotEmpty)
+            ? CarpoolTemporaryRideData.instance.tollRoute!['duration']
+                  .toString()
+                  .trim()
             : ((effectiveRoute != null &&
-                    effectiveRoute.durationText.trim().isNotEmpty)
-                ? effectiveRoute.durationText.trim()
-                : (pricing?.formattedDuration ??
-                    _liveDistanceResult?.durationText ??
-                    CarpoolDistanceCalculator.estimateDuration(distanceKm)));
+                      effectiveRoute.durationText.trim().isNotEmpty)
+                  ? effectiveRoute.durationText.trim()
+                  : (pricing?.formattedDuration ??
+                        _liveDistanceResult?.durationText ??
+                        CarpoolDistanceCalculator.estimateDuration(
+                          distanceKm,
+                        )));
 
         return Scaffold(
           backgroundColor: const Color(0xFFF7F6FD),
@@ -310,11 +355,12 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                   fromLng: s.fromLng,
                   toLat: s.toLat,
                   toLng: s.toLng,
-                  routeWaypoints: (effectiveRoute != null &&
+                  routeWaypoints:
+                      (effectiveRoute != null &&
                           effectiveRoute.waypoints.isNotEmpty)
                       ? effectiveRoute.waypoints
-                          .map((w) => (lat: w.lat, lng: w.lng))
-                          .toList()
+                            .map((w) => (lat: w.lat, lng: w.lng))
+                            .toList()
                       : null,
                   stopovers: orderedStops,
                   stopoverLocations: orderedStopoverObjects
@@ -379,32 +425,6 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                           ),
                         ),
                         const SizedBox(width: 14),
-
-                        // Container(
-                        //   padding: const EdgeInsets.symmetric(
-                        //     horizontal: 14,
-                        //     vertical: 8,
-                        //   ),
-                        //   decoration: BoxDecoration(
-                        //     color: Colors.white.withOpacity(0.92),
-                        //     borderRadius: BorderRadius.circular(20),
-                        //     boxShadow: [
-                        //       BoxShadow(
-                        //         color: Colors.black.withOpacity(0.08),
-                        //         blurRadius: 8,
-                        //         offset: const Offset(0, 2),
-                        //       ),
-                        //     ],
-                        //   ),
-                        //   child: const Text(
-                        //     'Route & Ride Summary',
-                        //     style: TextStyle(
-                        //       fontSize: 15.5,
-                        //       fontWeight: FontWeight.w800,
-                        //       color: Color(0xFF140D43),
-                        //     ),
-                        //   ),
-                        // ),
                       ],
                     ),
                   ),
@@ -543,9 +563,22 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                               bloc: bloc,
                             ),
 
+                            // ── 4. Ride Preferences & Options Card (Dynamic from API settings) ──
+                            if (dynamicSettings.enableNegotiation ||
+                                dynamicSettings.maxTwoInRear ||
+                                dynamicSettings.ladiesOnlyFilter ||
+                                dynamicSettings.instantBookingDefault) ...[
+                              const SizedBox(height: 14),
+                              _buildRideOptionsCard(
+                                bloc: bloc,
+                                state: s,
+                                settings: dynamicSettings,
+                              ),
+                            ],
+
                             const SizedBox(height: 16),
 
-                            // ── 4. Distance & Price Calculation ────────────
+                            // ── 5. Distance & Price Calculation ────────────
                             _buildPriceCalculationCard(
                               distanceKm: distanceKmDouble,
                               ratePerKm: ratePerKm,
@@ -693,8 +726,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
 
     // All verifications passed -> Dispatch API publish
     final temp = CarpoolTemporaryRideData.instance;
-    final effectiveRoute =
-        temp.selectedRoute ?? s.selectedRouteOption;
+    final effectiveRoute = temp.selectedRoute ?? s.selectedRouteOption;
     List<CarpoolStopoverEntity> activeStopoverObjects = [];
 
     if (temp.stopoverHalts.isNotEmpty) {
@@ -731,56 +763,51 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
         startLng: s.fromLng,
         destLat: s.toLat,
         destLng: s.toLng,
-        routePolyline: (effectiveRoute != null &&
-                effectiveRoute.waypoints.isNotEmpty)
+        routePolyline:
+            (effectiveRoute != null && effectiveRoute.waypoints.isNotEmpty)
             ? effectiveRoute.waypoints
-                .map((w) => (lat: w.lat, lng: w.lng))
-                .toList()
+                  .map((w) => (lat: w.lat, lng: w.lng))
+                  .toList()
             : null,
       );
       temp.saveStopoverHalts(activeStopoverObjects);
     }
 
-    final double? totalDist = temp.totalDistance ??
+    final double? totalDist =
+        temp.totalDistance ??
         (_liveDistanceResult != null
             ? _liveDistanceResult!.distanceKm.toDouble()
             : (effectiveRoute != null
-                ? effectiveRoute.distanceKm.toDouble()
-                : null));
+                  ? effectiveRoute.distanceKm.toDouble()
+                  : null));
 
-    final String? duration = temp.tollRoute?['duration']?.toString() ??
+    final String? duration =
+        temp.tollRoute?['duration']?.toString() ??
         _liveDistanceResult?.durationText ??
         effectiveRoute?.durationText;
 
     final bool hasToll = temp.hasToll ?? effectiveRoute?.hasTolls ?? false;
     final String tollType = temp.tollType ?? (hasToll ? 'toll' : 'no_toll');
 
-    final Map<String, dynamic> tollRoute = temp.tollRoute ?? {
-      'type': tollType,
-      'duration': duration ?? '1 hour 15 mins',
-      'distance': totalDist ?? 0.0,
-    };
+    final Map<String, dynamic> tollRoute =
+        temp.tollRoute ??
+        {
+          'type': tollType,
+          'duration': duration ?? '1 hour 15 mins',
+          'distance': totalDist ?? 0.0,
+        };
 
-    bloc.add(CarpoolOfferPublishPressed(
-      stopovers: activeStopoverObjects,
-      totalDistance: totalDist,
-      durationText: duration,
-      hasToll: hasToll,
-      tollType: tollType,
-      tollRoute: tollRoute,
-    ));
+    bloc.add(
+      CarpoolOfferPublishPressed(
+        stopovers: activeStopoverObjects,
+        totalDistance: totalDist,
+        durationText: duration,
+        hasToll: hasToll,
+        tollType: tollType,
+        tollRoute: tollRoute,
+      ),
+    );
   }
-
-  /// Estimates travel duration based on distance
-  // String _estimateDuration(int distanceKm) {
-  //   final totalMinutes = (distanceKm / 65 * 60).round();
-  //   final hours = totalMinutes ~/ 60;
-  //   final mins = totalMinutes % 60;
-  //   if (hours > 0) {
-  //     return '$hours hr ${mins > 0 ? '$mins min' : ''}';
-  //   }
-  //   return '$mins min';
-  // }
 
   Future<void> _pickDate(
     BuildContext context,
@@ -1265,9 +1292,14 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                                     .replaceAll(RegExp(r',\s*,'), ',')
                                     .replaceAll(RegExp(r'\s+'), ' ')
                                     .trim();
-                                addr = addr.replaceAll(RegExp(r'^,\s*|,\s*$'), '');
+                                addr = addr.replaceAll(
+                                  RegExp(r'^,\s*|,\s*$'),
+                                  '',
+                                );
                                 if (stop.state.isNotEmpty &&
-                                    !addr.toLowerCase().contains(stop.state.toLowerCase())) {
+                                    !addr.toLowerCase().contains(
+                                      stop.state.toLowerCase(),
+                                    )) {
                                   return '$addr • ${stop.state}';
                                 }
                                 return addr.isNotEmpty ? addr : stop.city;
@@ -1341,26 +1373,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                               ),
                             ),
                             const SizedBox(width: 8),
-                            // Container(
-                            //   padding: const EdgeInsets.symmetric(
-                            //     horizontal: 6,
-                            //     vertical: 1.5,
-                            //   ),
-                            //   decoration: BoxDecoration(
-                            //     color: const Color(0xFFFEF3C7),
-                            //     borderRadius: BorderRadius.circular(4),
-                            //   ),
-                            //   child: const Text(
-                            //     'Halt',
-                            //     style: TextStyle(
-                            //       fontSize: 9.5,
-                            //       fontWeight: FontWeight.w700,
-                            //       color: Color(0xFFD97706),
-                            //     ),
-                            //   ),
-                            // ),
 
-                            // const Spacer(),
                             InkWell(
                               onTap: () {
                                 context.read<CarpoolOfferRideBloc>().add(
@@ -1861,8 +1874,12 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     int? maxPrice,
     required CarpoolOfferRideBloc bloc,
   }) {
+    final int maxAllowedSeats =
+        CarpoolSettingsStorage.current.maxSeatsPerRide > 0
+        ? CarpoolSettingsStorage.current.maxSeatsPerRide
+        : 4;
     final bool canDecrementSeats = seats > 1;
-    final bool canIncrementSeats = seats < 8;
+    final bool canIncrementSeats = seats < maxAllowedSeats;
     final bool canDecreasePrice = minPrice == null || pricePerSeat > minPrice;
     final bool canIncreasePrice = maxPrice == null || pricePerSeat < maxPrice;
 
@@ -2039,7 +2056,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
 
                 const SizedBox(width: 8),
 
-                // Stepper for Price (±10)
+                // Stepper for Price (±1)
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 4,
@@ -2060,7 +2077,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                           if (canDecreasePrice) {
                             bloc.add(
                               CarpoolOfferPriceChanged(
-                                -10,
+                                -1,
                                 currentBasePrice: pricePerSeat,
                               ),
                             );
@@ -2086,7 +2103,7 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
                           if (canIncreasePrice) {
                             bloc.add(
                               CarpoolOfferPriceChanged(
-                                10,
+                                1,
                                 currentBasePrice: pricePerSeat,
                               ),
                             );
@@ -2099,83 +2116,182 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
               ],
             ),
           ),
-
-          // ── Bottom Reassurance Banner ───────────────────────
-          if (suggestedPrice != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: const BoxDecoration(
-                color: Color(0xFFF8FCFA),
-                borderRadius: BorderRadius.vertical(
-                  bottom: Radius.circular(20),
-                ),
-                border: Border(
-                  top: BorderSide(color: Color(0xFFE9F7F1), width: 1),
-                ),
-              ),
-              child: Row(
-                children: [
-                  const Icon(
-                    Icons.check_circle_rounded,
-                    color: Color(0xFF10B981),
-                    size: 16,
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Recommended: ₹$suggestedPrice  •  Fair limit: ₹${minPrice ?? 0} – ₹${maxPrice ?? 0}',
-                      style: const TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF047857),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
         ],
       ),
     );
   }
 
-  /// Backward-compatible delegate for seats row
-  // Widget _buildSeatsBookingRow(int seats, CarpoolOfferRideBloc bloc) {
-  //   return _buildSeatsAndPricingCard(
-  //     seats: seats,
-  //     pricePerSeat: 0,
-  //     totalPrice: 0,
-  //     distanceKm: 0,
-  //     ratePerKm: 3.5,
-  //     bloc: bloc,
-  //   );
-  // }
+  /// Builds the Ride Preferences & Options Card with dynamic checkboxes from API settings
+  /// Builds the Ride Preferences & Options Card in a 2-column grid matching Image 2
+  Widget _buildRideOptionsCard({
+    required CarpoolOfferRideBloc bloc,
+    required CarpoolOfferRideState state,
+    required CarpoolSettingsEntity settings,
+  }) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _buildCheckboxOptionCard(
+                title: 'In-App Negotiation',
+                subtitle: 'Riders can propose counter-fares',
+                isChecked: state.enableNegotiation,
+                onTap: () {
+                  bloc.add(
+                    CarpoolOfferNegotiationToggled(!state.enableNegotiation),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildCheckboxOptionCard(
+                title: 'Max 2 in Rear',
+                subtitle: 'Comfortable rear seating cap',
+                isChecked: state.maxTwoInRear,
+                onTap: () {
+                  bloc.add(
+                    CarpoolOfferMaxTwoInRearToggled(!state.maxTwoInRear),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _buildCheckboxOptionCard(
+                title: 'Ladies-Only Filter',
+                subtitle: 'Enable female-only ride filter',
+                isChecked: state.ladiesOnlyFilter,
+                onTap: () {
+                  bloc.add(
+                    CarpoolOfferLadiesOnlyToggled(!state.ladiesOnlyFilter),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildCheckboxOptionCard(
+                title: 'Instant Booking Default',
+                subtitle: 'No driver approval needed',
+                isChecked: state.instantBookingDefault,
+                onTap: () {
+                  bloc.add(
+                    CarpoolOfferInstantBookingToggled(
+                      !state.instantBookingDefault,
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
 
-  /// Backward-compatible delegate for price row
-  // Widget _buildPriceMarginRow({
-  //   required int pricePerSeat,
-  //   required int totalPrice,
-  //   required int distanceKm,
-  //   required num ratePerKm,
-  //   int? suggestedPrice,
-  //   int? minPrice,
-  //   int? maxPrice,
-  //   required CarpoolOfferRideBloc bloc,
-  // }) {
-  //   return _buildSeatsAndPricingCard(
-  //     seats: 1,
-  //     pricePerSeat: pricePerSeat,
-  //     totalPrice: totalPrice,
-  //     distanceKm: distanceKm,
-  //     ratePerKm: ratePerKm,
-  //     suggestedPrice: suggestedPrice,
-  //     minPrice: minPrice,
-  //     maxPrice: maxPrice,
-  //     bloc: bloc,
-  //   );
-  // }
+  /// Single Checkbox option card matching attached design (Image 2):
+  /// Title & Subtitle on the left, Checkbox on the right
+  Widget _buildCheckboxOptionCard({
+    required String title,
+    required String subtitle,
+    required bool isChecked,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: const Color(0xFFE2E8F0),
+              width: 1.2,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.015),
+                blurRadius: 4,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // Left: Title and Subtitle
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF0F172A),
+                        letterSpacing: -0.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w400,
+                        color: Color(0xFF94A3B8),
+                        height: 1.25,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Right: Checkbox
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 150),
+                width: 20,
+                height: 20,
+                decoration: BoxDecoration(
+                  color: isChecked ? const Color(0xFF0066FF) : Colors.white,
+                  borderRadius: BorderRadius.circular(4.5),
+                  border: Border.all(
+                    color: isChecked
+                        ? const Color(0xFF0066FF)
+                        : const Color(0xFFCBD5E1),
+                    width: 1.5,
+                  ),
+                ),
+                child: isChecked
+                    ? const Icon(
+                        Icons.check,
+                        size: 14,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
   /// Builds the Price & Distance breakdown card using dynamic pricing calculation
   Widget _buildPriceCalculationCard({
@@ -2187,12 +2303,10 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
     CarpoolPricingEntity? pricing,
     String? durationText,
   }) {
-    // final String displayDistance = distanceKm is double && distanceKm % 1 != 0
-    //     ? distanceKm.toStringAsFixed(1)
-    //     : '${distanceKm.round()}';
-
     final String displayRate = ratePerKm is double && ratePerKm % 1 != 0
-        ? ratePerKm.toStringAsFixed(1)
+        ? (ratePerKm.toStringAsFixed(2).endsWith('0')
+              ? ratePerKm.toStringAsFixed(1)
+              : ratePerKm.toStringAsFixed(2))
         : '${ratePerKm.round()}';
 
     // final String displayDuration =
@@ -2337,55 +2451,6 @@ class _RideSummaryViewState extends State<_RideSummaryView> {
       ),
     );
   }
-
-  // Widget _buildMetricMiniChip({
-  //   required IconData icon,
-  //   required String label,
-  //   required String value,
-  //   required Color iconColor,
-  // }) {
-  //   return Container(
-  //     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-  //     decoration: BoxDecoration(
-  //       color: const Color(0xFFF8F7FD),
-  //       borderRadius: BorderRadius.circular(12),
-  //       border: Border.all(color: const Color(0xFFEDE8FF)),
-  //     ),
-  //     child: Column(
-  //       crossAxisAlignment: CrossAxisAlignment.start,
-  //       children: [
-  //         Row(
-  //           children: [
-  //             Icon(icon, size: 14, color: iconColor),
-  //             const SizedBox(width: 4),
-  //             Flexible(
-  //               child: Text(
-  //                 label,
-  //                 overflow: TextOverflow.ellipsis,
-  //                 style: const TextStyle(
-  //                   fontSize: 10.5,
-  //                   fontWeight: FontWeight.w600,
-  //                   color: Color(0xFF6B658C),
-  //                 ),
-  //               ),
-  //             ),
-  //           ],
-  //         ),
-  //         const SizedBox(height: 4),
-  //         Text(
-  //           value,
-  //           maxLines: 1,
-  //           overflow: TextOverflow.ellipsis,
-  //           style: const TextStyle(
-  //             fontSize: 13,
-  //             fontWeight: FontWeight.w800,
-  //             color: Color(0xFF140D43),
-  //           ),
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
 
   Widget _buildFareRowItem({
     required String title,

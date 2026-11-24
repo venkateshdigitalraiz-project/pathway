@@ -21,6 +21,9 @@ class ApiEndpoints {
   /// User profile endpoint
   static const String userProfile = '$baseUrl/api/users/profile';
 
+  /// Settings endpoints
+  static const String carpoolSettings = '$baseUrl/api/settings/carpool';
+
   /// Carpool endpoints
   static const String calculatePricing =
       '$baseUrl/api/carpool/pricing/calculate';
